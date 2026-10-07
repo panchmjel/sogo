@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "SOGO — dokumenty i porównania"
+description = "Profesjonalna aplikacja robocza dla firmy budowlanej do pracy z projektami, dokumentami ofertowymi, porównaniami zakupowymi i ustaleniami zespołu."
+version = "1.0.0"
+id = "artifacts/sogo"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25701
+
+[services.development]
+run = "pnpm --filter @workspace/sogo run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sogo", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/sogo/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25701"
+BASE_PATH = "/"

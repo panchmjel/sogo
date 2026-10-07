@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root {
+  --background: 47 28% 95%;
+  --foreground: 196 36% 15%;
+  --border: 43 18% 83%;
+  --card: 45 31% 98%;
+  --card-foreground: 196 36% 15%;
+  --popover: 45 31% 98%;
+  --popover-foreground: 196 36% 15%;
+  --primary: 39 91% 58%;
+  --primary-foreground: 196 36% 15%;
+  --secondary: 196 22% 90%;
+  --secondary-foreground: 196 36% 15%;
+  --muted: 45 18% 91%;
+  --muted-foreground: 196 14% 46%;
+  --accent: 167 39% 35%;
+  --accent-foreground: 45 31% 98%;
+  --destructive: 2 66% 47%;
+  --destructive-foreground: 45 31% 98%;
+  --input: 43 18% 78%;
+  --ring: 39 91% 58%;
+  --app-font-sans: 'Manrope', sans-serif;
+  --app-font-display: 'Space Grotesk', sans-serif;
+  --app-font-mono: 'DM Mono', monospace;
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-display);
+  --font-mono: var(--app-font-mono);
+  --radius: 0.5rem;
+  color-scheme: light;
+}
+
+.dark {
+  --background: 196 36% 10%;
+  --foreground: 45 31% 96%;
+  --border: 196 25% 23%;
+  --card: 196 31% 14%;
+  --card-foreground: 45 31% 96%;
+  --popover: 196 31% 14%;
+  --popover-foreground: 45 31% 96%;
+  --primary: 39 91% 58%;
+  --primary-foreground: 196 36% 10%;
+  --secondary: 196 25% 22%;
+  --secondary-foreground: 45 31% 96%;
+  --muted: 196 25% 20%;
+  --muted-foreground: 196 15% 68%;
+  --accent: 167 39% 43%;
+  --accent-foreground: 45 31% 96%;
+  --destructive: 2 66% 58%;
+  --destructive-foreground: 45 31% 96%;
+  --input: 196 25% 28%;
+  --ring: 39 91% 58%;
+  color-scheme: dark;
+}
+
+body {
+  background-image: linear-gradient(135deg, hsl(47 28% 95%), hsl(45 31% 98%));
+}
+
+.sogo-noise::after {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.45'/%3E%3C/svg%3E");
+}
+
+@keyframes sogo-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sogo-rise { animation: sogo-rise 420ms ease both; }
+.sogo-delay-1 { animation-delay: 60ms; }
+.sogo-delay-2 { animation-delay: 120ms; }

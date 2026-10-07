@@ -1,0 +1,397 @@
+.apo-redesign {
+  --ink: hsl(var(--foreground));
+  --muted-ink: hsl(var(--muted-foreground));
+  --line: hsl(var(--border));
+  --paper: hsl(var(--background));
+  --surface: hsl(var(--card));
+  --gold: hsl(var(--primary));
+  --teal: hsl(var(--accent));
+  --soft-gold: hsl(var(--primary) / .12);
+  --soft-teal: hsl(var(--accent) / .10);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  min-height: 560px;
+  overflow: hidden;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse at 16% 0%, hsl(var(--primary) / .075), transparent 31rem),
+    var(--paper);
+  font-family: var(--app-font-sans), sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.apo-redesign *, .apo-redesign *::before, .apo-redesign *::after { box-sizing: border-box; }
+.apo-redesign button, .apo-redesign textarea { font: inherit; }
+.apo-redesign button { color: inherit; }
+.apo-redesign button:focus-visible, .apo-redesign textarea:focus-visible { outline: 3px solid hsl(var(--primary) / .48); outline-offset: 2px; }
+.apo-redesign .workspace-topbar {
+  z-index: 5;
+  display: flex;
+  min-height: 70px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 27px;
+  border-bottom: 1px solid hsl(var(--border) / .78);
+  background: hsl(var(--card) / .89);
+  backdrop-filter: blur(16px);
+}
+.apo-redesign .topbar-leading, .apo-redesign .topbar-trailing, .apo-redesign .back-button, .apo-redesign .context-toggle, .apo-redesign .save-state { display: flex; align-items: center; }
+.apo-redesign .topbar-leading { min-width: 0; gap: 21px; }
+.apo-redesign .back-button {
+  gap: 8px;
+  padding: 8px 10px 8px 7px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted-ink);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background .18s ease, color .18s ease;
+}
+.apo-redesign .back-button:hover { background: hsl(var(--secondary) / .7); color: var(--ink); }
+.apo-redesign .topbar-divider { width: 1px; height: 28px; background: var(--line); }
+.apo-redesign .workspace-heading { min-width: 0; }
+.apo-redesign .workspace-eyebrow { display: flex; align-items: center; gap: 6px; color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 9px; font-weight: 500; letter-spacing: .08em; }
+.apo-redesign .brand-mark { display: grid; width: 16px; height: 16px; place-items: center; border-radius: 5px 5px 5px 1px; color: var(--ink); background: var(--gold); font-family: var(--app-font-display), sans-serif; font-size: 11px; font-weight: 700; }
+.apo-redesign .eyebrow-slash { padding: 0 2px; color: hsl(var(--border)); }
+.apo-redesign .workspace-heading h1 { overflow: hidden; margin: 3px 0 0; font-family: var(--app-font-display), sans-serif; font-size: 14px; font-weight: 700; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
+.apo-redesign .topbar-trailing { flex-shrink: 0; gap: 19px; }
+.apo-redesign .context-toggle { gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: hsl(var(--foreground) / .78); cursor: pointer; font-size: 11px; font-weight: 700; transition: border-color .18s, background .18s; }
+.apo-redesign .context-toggle:hover, .apo-redesign .context-toggle.is-open { border-color: hsl(var(--primary) / .58); background: hsl(var(--primary) / .08); }
+.apo-redesign .context-toggle > svg:last-child { transition: transform .2s ease; }
+.apo-redesign .context-toggle.is-open > svg:last-child { transform: rotate(180deg); }
+.apo-redesign .save-state { gap: 7px; color: var(--muted-ink); font-size: 10px; white-space: nowrap; }
+.apo-redesign .save-dot, .apo-redesign .online-pill > span, .apo-redesign .preview-live > span, .apo-redesign .footer-status-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: hsl(var(--accent)); }
+.apo-redesign .comparison-context { display: flex; min-height: 55px; align-items: center; gap: clamp(20px, 4vw, 58px); padding: 9px 30px; border-bottom: 1px solid hsl(var(--border) / .76); background: hsl(var(--card) / .7); animation: apo-context-in .18s ease-out both; }
+.apo-redesign .context-project, .apo-redesign .context-pair, .apo-redesign .context-meta { display: flex; align-items: center; gap: 9px; color: hsl(var(--foreground) / .82); font-size: 11px; }
+.apo-redesign .context-label { margin-right: 3px; color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 9px; letter-spacing: .08em; }
+.apo-redesign .context-pair { gap: 7px; }
+.apo-redesign .pair-divider, .apo-redesign .context-meta { color: var(--muted-ink); }
+.apo-redesign .context-meta { gap: 8px; font-size: 10px; }
+.apo-redesign .supplier-token { display: inline-grid; width: 21px; height: 21px; flex: 0 0 21px; place-items: center; border: 1px solid hsl(var(--accent) / .2); border-radius: 7px; color: hsl(var(--accent)); background: hsl(var(--accent) / .1); font-family: var(--app-font-mono), monospace; font-size: 10px; font-weight: 500; }
+.apo-redesign .supplier-b { border-color: hsl(var(--foreground) / .12); color: hsl(var(--foreground) / .62); background: hsl(var(--foreground) / .045); }
+.apo-redesign .mobile-panel-switch { display: none; }
+.apo-redesign .workspace-columns { display: grid; min-width: 0; min-height: 0; flex: 1; grid-template-columns: minmax(420px, 45%) minmax(0, 1fr); padding: 17px 20px 19px; gap: 15px; }
+.apo-redesign .conversation-pane, .apo-redesign .preview-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid hsl(var(--border) / .88); border-radius: 14px; background: hsl(var(--card) / .83); box-shadow: 0 10px 28px hsl(var(--foreground) / .045), 0 1px 2px hsl(var(--foreground) / .04); }
+.apo-redesign .conversation-pane { display: flex; flex-direction: column; }
+.apo-redesign .conversation-head { display: flex; min-height: 73px; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 17px; border-bottom: 1px solid hsl(var(--border) / .75); }
+.apo-redesign .conversation-title { display: flex; min-width: 0; align-items: center; gap: 11px; }
+.apo-redesign .apo-orbit { position: relative; display: grid; width: 35px; height: 35px; flex: 0 0 35px; place-items: center; border: 1px solid hsl(var(--primary) / .45); border-radius: 12px 12px 12px 4px; background: hsl(var(--primary) / .13); }
+.apo-redesign .apo-orbit::before, .apo-redesign .apo-orbit::after { position: absolute; display: block; content: ''; border: 1px solid hsl(var(--accent) / .5); border-radius: 50%; transform: rotate(-28deg); }
+.apo-redesign .apo-orbit::before { width: 18px; height: 9px; }
+.apo-redesign .apo-orbit::after { width: 9px; height: 18px; }
+.apo-redesign .apo-orbit span { z-index: 1; width: 4px; height: 4px; border-radius: 50%; background: var(--teal); }
+.apo-redesign .conversation-title-line { display: flex; align-items: center; gap: 9px; }
+.apo-redesign .conversation-title h2, .apo-redesign .preview-heading h2 { margin: 0; font-family: var(--app-font-display), sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -.035em; }
+.apo-redesign .conversation-title p { margin: 3px 0 0; color: var(--muted-ink); font-size: 10px; }
+.apo-redesign .online-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid hsl(var(--accent) / .17); border-radius: 999px; color: hsl(var(--accent)); background: var(--soft-teal); font-family: var(--app-font-mono), monospace; font-size: 8px; letter-spacing: .015em; }
+.apo-redesign .online-pill > span { width: 5px; height: 5px; flex-basis: 5px; }
+.apo-redesign .conversation-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.apo-redesign .icon-action { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; color: var(--muted-ink); background: transparent; cursor: pointer; transition: border-color .18s ease, background .18s ease, color .18s ease; }
+.apo-redesign .icon-action:hover { border-color: var(--line); color: var(--ink); background: hsl(var(--secondary) / .62); }
+.apo-redesign .undo-action { font-size: 10px; font-weight: 700; }
+.apo-redesign .expand-action { width: 32px; padding: 0; }
+.apo-redesign .chat-context-line { display: flex; min-height: 35px; align-items: center; gap: 7px; padding: 0 18px; border-bottom: 1px solid hsl(var(--border) / .53); color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 9px; }
+.apo-redesign .context-line-icon { display: flex; color: hsl(var(--accent)); }
+.apo-redesign .context-dot { color: hsl(var(--border)); }
+.apo-redesign .context-line-spacer { flex: 1; }
+.apo-redesign .transcript { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; padding: 21px 19px 14px; scrollbar-color: hsl(var(--border)) transparent; scrollbar-width: thin; }
+.apo-redesign .turn-list { display: flex; flex-direction: column; gap: 23px; }
+.apo-redesign .turn { animation: apo-message-in .28s ease-out both; }
+.apo-redesign .turn-meta { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 9px; }
+.apo-redesign .turn-type { color: hsl(var(--accent)); font-size: 8px; letter-spacing: .1em; }
+.apo-redesign .user-bubble { max-width: 94%; margin-left: auto; padding: 11px 13px; border: 1px solid hsl(var(--primary) / .3); border-radius: 12px 12px 4px 12px; color: hsl(var(--foreground)); background: hsl(var(--primary) / .12); font-size: 12px; line-height: 1.65; }
+.apo-redesign .user-bubble p, .apo-redesign .assistant-reply p { margin: 0; }
+.apo-redesign .assistant-reply { display: flex; align-items: flex-start; gap: 9px; margin: 11px 15px 0 0; color: hsl(var(--foreground) / .87); font-size: 11px; line-height: 1.7; }
+.apo-redesign .reply-check { display: grid; width: 18px; height: 18px; flex: 0 0 18px; margin-top: 1px; place-items: center; border-radius: 6px; color: hsl(var(--accent)); background: var(--soft-teal); }
+.apo-redesign .changed-field { display: flex; align-items: center; gap: 6px; margin-top: 7px; color: hsl(var(--accent)); font-family: var(--app-font-mono), monospace; font-size: 9px; }
+.apo-redesign .change-rule { width: 13px; height: 1px; background: hsl(var(--accent) / .48); }
+.apo-redesign .turn-attachments { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.apo-redesign .turn-attachments span, .apo-redesign .mail-source-note { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 6px; color: hsl(var(--foreground) / .72); background: hsl(var(--card) / .72); font-size: 9px; }
+.apo-redesign .mail-source-note { margin-top: 7px; color: hsl(var(--accent)); background: transparent; }
+.apo-redesign .transcript-end { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 24px 0 5px; color: hsl(var(--muted-foreground) / .75); font-family: var(--app-font-mono), monospace; font-size: 8px; letter-spacing: .04em; }
+.apo-redesign .transcript-end span { width: 24px; height: 1px; background: hsl(var(--border) / .8); }
+.apo-redesign .composer-area { flex: 0 0 auto; padding: 12px 14px 13px; border-top: 1px solid hsl(var(--border) / .72); background: hsl(var(--background) / .62); }
+.apo-redesign .composer { overflow: visible; border: 1px solid hsl(var(--border) / .95); border-radius: 11px; background: hsl(var(--card)); box-shadow: 0 2px 7px hsl(var(--foreground) / .025); transition: border-color .18s, box-shadow .18s; }
+.apo-redesign .composer:focus-within { border-color: hsl(var(--primary) / .78); box-shadow: 0 0 0 3px hsl(var(--primary) / .095); }
+.apo-redesign .composer-top { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 3px; }
+.apo-redesign .composer-top textarea { display: block; min-width: 0; min-height: 35px; max-height: 112px; flex: 1; resize: vertical; padding: 8px 1px 5px; border: 0; border-radius: 4px; color: var(--ink); background: transparent; font-size: 11px; line-height: 1.55; outline: none; }
+.apo-redesign .composer-top textarea:focus-visible { outline: none; }
+.apo-redesign .composer-top textarea::placeholder { color: hsl(var(--muted-foreground) / .8); }
+.apo-redesign .add-menu-wrap { position: relative; flex: 0 0 auto; }
+.apo-redesign .add-button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--muted-ink); background: hsl(var(--background) / .72); cursor: pointer; transition: transform .2s, background .18s, color .18s; }
+.apo-redesign .add-button:hover, .apo-redesign .add-button.is-open { color: var(--ink); background: var(--soft-gold); }
+.apo-redesign .add-button.is-open svg { transform: rotate(45deg); }
+.apo-redesign .add-button svg { transition: transform .2s ease; }
+.apo-redesign .add-menu { position: absolute; z-index: 20; bottom: 43px; left: 0; width: 228px; padding: 5px; border: 1px solid var(--line); border-radius: 11px; background: hsl(var(--card)); box-shadow: 0 12px 32px hsl(var(--foreground) / .14); animation: apo-menu-in .16s ease-out both; }
+.apo-redesign .add-menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 8px; border: 0; border-radius: 7px; color: var(--muted-ink); background: transparent; cursor: pointer; text-align: left; }
+.apo-redesign .add-menu button:hover { color: var(--ink); background: hsl(var(--secondary) / .65); }
+.apo-redesign .add-menu button > svg { flex: 0 0 17px; color: hsl(var(--accent)); }
+.apo-redesign .add-menu button span { display: flex; flex-direction: column; gap: 2px; }
+.apo-redesign .add-menu button b { color: var(--ink); font-size: 10px; }
+.apo-redesign .add-menu button small { color: var(--muted-ink); font-size: 9px; }
+.apo-redesign .send-button { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 0; border-radius: 8px; color: hsl(var(--primary-foreground)); background: var(--gold); cursor: pointer; transition: transform .18s ease, background .18s ease, opacity .18s ease; }
+.apo-redesign .send-button:hover:not(:disabled) { transform: translateY(-1px); background: hsl(var(--primary) / .88); }
+.apo-redesign .send-button:disabled { cursor: not-allowed; opacity: .43; }
+.apo-redesign .composer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 11px 8px 14px; color: hsl(var(--muted-foreground) / .88); font-family: var(--app-font-mono), monospace; font-size: 8px; }
+.apo-redesign .composer-bottom > span:first-child { display: flex; align-items: center; gap: 5px; }
+.apo-redesign .key-divider { color: hsl(var(--border)); }
+.apo-redesign .character-count { flex: 0 0 auto; }
+.apo-redesign .draft-attachments { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 7px; }
+.apo-redesign .draft-attachments > span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 6px 4px 8px; border: 1px solid hsl(var(--border) / .8); border-radius: 7px; color: hsl(var(--foreground) / .8); background: hsl(var(--card)); font-size: 9px; }
+.apo-redesign .draft-attachments > span > svg { flex: 0 0 13px; color: hsl(var(--accent)); }
+.apo-redesign .draft-attachments button, .apo-redesign .remove-mail { display: grid; width: 18px; height: 18px; flex: 0 0 18px; place-items: center; border: 0; border-radius: 5px; color: var(--muted-ink); background: transparent; cursor: pointer; }
+.apo-redesign .draft-attachments button:hover, .apo-redesign .remove-mail:hover { color: var(--ink); background: hsl(var(--secondary)); }
+.apo-redesign .mail-attached { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; padding: 6px 8px; border: 1px solid hsl(var(--accent) / .2); border-radius: 8px; color: hsl(var(--accent)); background: var(--soft-teal); font-size: 9px; }
+.apo-redesign .mail-attached > span { display: flex; align-items: center; gap: 6px; }
+.apo-redesign .mail-attached > button:not(.remove-mail) { margin-left: auto; padding: 3px; border: 0; color: hsl(var(--accent)); background: transparent; cursor: pointer; font-size: 9px; font-weight: 700; }
+.apo-redesign .mail-attached > button:not(.remove-mail):hover { text-decoration: underline; }
+.apo-redesign .empty-conversation { display: flex; max-width: 400px; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 100%; margin: auto; padding: 28px 3px; animation: apo-message-in .3s ease-out both; }
+.apo-redesign .empty-symbol { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid hsl(var(--primary) / .26); border-radius: 14px 14px 14px 5px; color: hsl(var(--accent)); background: var(--soft-gold); }
+.apo-redesign .empty-kicker { margin: 22px 0 7px; color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 9px; letter-spacing: .12em; }
+.apo-redesign .empty-conversation h3 { margin: 0; font-family: var(--app-font-display), sans-serif; font-size: 22px; letter-spacing: -.04em; }
+.apo-redesign .empty-conversation > p:not(.empty-kicker) { max-width: 330px; margin: 9px 0 0; color: var(--muted-ink); font-size: 11px; line-height: 1.75; }
+.apo-redesign .suggestions { display: grid; width: 100%; gap: 7px; margin-top: 22px; }
+.apo-redesign .suggestions button { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 11px; border: 1px solid hsl(var(--border) / .85); border-radius: 8px; color: hsl(var(--foreground) / .81); background: hsl(var(--card) / .7); cursor: pointer; font-size: 10px; text-align: left; transition: border .18s, background .18s, transform .18s; }
+.apo-redesign .suggestions button:hover { transform: translateX(2px); border-color: hsl(var(--primary) / .55); background: hsl(var(--primary) / .07); }
+.apo-redesign .suggestions button svg { flex: 0 0 14px; color: hsl(var(--accent)); }
+
+.apo-redesign .preview-pane { display: flex; flex-direction: column; }
+.apo-redesign .preview-head { display: flex; min-height: 65px; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 17px; border-bottom: 1px solid hsl(var(--border) / .72); }
+.apo-redesign .preview-heading { display: flex; align-items: center; gap: 10px; }
+.apo-redesign .preview-icon { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid hsl(var(--accent) / .17); border-radius: 10px; color: hsl(var(--accent)); background: var(--soft-teal); }
+.apo-redesign .preview-overline { display: block; color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 8px; font-weight: 500; letter-spacing: .11em; }
+.apo-redesign .preview-heading h2 { margin-top: 3px; font-size: 14px; }
+.apo-redesign .export-button { display: inline-flex; min-height: 33px; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid hsl(var(--foreground) / .13); border-radius: 8px; color: hsl(var(--foreground) / .83); background: hsl(var(--card)); cursor: pointer; font-size: 10px; font-weight: 700; transition: border .18s, background .18s, transform .18s; }
+.apo-redesign .export-button:hover { transform: translateY(-1px); border-color: hsl(var(--accent) / .45); background: var(--soft-teal); }
+.apo-redesign .preview-suppliers { display: flex; min-height: 43px; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid hsl(var(--border) / .57); color: hsl(var(--foreground) / .8); font-size: 10px; }
+.apo-redesign .preview-suppliers > div { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.apo-redesign .supplier-vs { color: hsl(var(--muted-foreground) / .65); font-family: var(--app-font-mono), monospace; font-size: 9px; }
+.apo-redesign .preview-live { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: hsl(var(--accent)); font-family: var(--app-font-mono), monospace; font-size: 8px; }
+.apo-redesign .preview-live > span { width: 5px; height: 5px; flex-basis: 5px; }
+.apo-redesign .preview-tabs { display: flex; min-height: 42px; align-items: stretch; gap: 19px; padding: 0 18px; border-bottom: 1px solid hsl(var(--border) / .7); }
+.apo-redesign .preview-tabs button { position: relative; display: inline-flex; align-items: center; gap: 5px; padding: 0 1px; border: 0; color: var(--muted-ink); background: transparent; cursor: pointer; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.apo-redesign .preview-tabs button::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: transparent; content: ''; }
+.apo-redesign .preview-tabs button.active { color: var(--ink); }
+.apo-redesign .preview-tabs button.active::after { background: hsl(var(--accent)); }
+.apo-redesign .preview-tabs button span { display: inline-grid; min-width: 16px; height: 16px; place-items: center; border-radius: 5px; color: var(--muted-ink); background: hsl(var(--secondary) / .76); font-family: var(--app-font-mono), monospace; font-size: 8px; }
+.apo-redesign .preview-content { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; padding: 17px 18px 14px; scrollbar-color: hsl(var(--border)) transparent; scrollbar-width: thin; }
+.apo-redesign .summary-view, .apo-redesign .materials-view, .apo-redesign .costs-view { animation: apo-tab-in .2s ease-out both; }
+.apo-redesign .recommendation { position: relative; overflow: hidden; padding: 15px 15px 13px; border: 1px solid hsl(var(--accent) / .2); border-radius: 11px; background: linear-gradient(117deg, hsl(var(--accent) / .09), hsl(var(--primary) / .085) 74%, hsl(var(--card) / .56)); }
+.apo-redesign .recommendation::after { position: absolute; top: -38px; right: -40px; width: 118px; height: 118px; border: 1px solid hsl(var(--accent) / .1); border-radius: 50%; box-shadow: 0 0 0 18px hsl(var(--accent) / .025), 0 0 0 36px hsl(var(--accent) / .02); content: ''; pointer-events: none; }
+.apo-redesign .recommendation-heading { position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; color: hsl(var(--accent)); font-family: var(--app-font-mono), monospace; font-size: 8px; font-weight: 500; letter-spacing: .08em; }
+.apo-redesign .rec-check { display: grid; width: 19px; height: 19px; place-items: center; border: 1px solid hsl(var(--accent) / .2); border-radius: 6px; background: hsl(var(--card) / .65); }
+.apo-redesign .rec-score { margin-left: auto; color: hsl(var(--accent) / .77); letter-spacing: 0; }
+.apo-redesign .recommendation h3 { position: relative; z-index: 1; max-width: 360px; margin: 12px 0 5px; font-family: var(--app-font-display), sans-serif; font-size: clamp(15px, 1.3vw, 18px); font-weight: 700; letter-spacing: -.04em; line-height: 1.25; }
+.apo-redesign .recommendation > p { position: relative; z-index: 1; max-width: 480px; margin: 0; color: hsl(var(--foreground) / .7); font-size: 10px; line-height: 1.65; }
+.apo-redesign .recommendation-delta { position: relative; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin-top: 13px; padding-top: 10px; border-top: 1px solid hsl(var(--accent) / .13); color: hsl(var(--foreground) / .63); font-size: 9px; }
+.apo-redesign .recommendation-delta strong { color: hsl(var(--accent)); font-family: var(--app-font-display), sans-serif; font-size: 16px; font-variant-numeric: tabular-nums; }
+.apo-redesign .delta-percent { margin-left: auto; padding: 3px 6px; border-radius: 5px; color: hsl(var(--accent)); background: hsl(var(--accent) / .1); font-family: var(--app-font-mono), monospace; font-size: 8px; }
+.apo-redesign .cost-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
+.apo-redesign .supplier-cost { min-width: 0; padding: 11px 12px 10px; border: 1px solid hsl(var(--border) / .85); border-radius: 10px; background: hsl(var(--card) / .77); }
+.apo-redesign .supplier-cost.preferred { border-color: hsl(var(--accent) / .28); }
+.apo-redesign .supplier-cost-label { display: flex; min-width: 0; align-items: center; gap: 6px; color: hsl(var(--foreground) / .8); font-size: 9px; font-weight: 700; }
+.apo-redesign .supplier-cost-label .supplier-token { width: 18px; height: 18px; flex-basis: 18px; border-radius: 6px; font-size: 9px; }
+.apo-redesign .best-tag { overflow: hidden; margin-left: auto; padding: 3px 5px; border-radius: 4px; color: hsl(var(--accent)); background: var(--soft-teal); font-family: var(--app-font-mono), monospace; font-size: 7px; font-weight: 500; letter-spacing: .02em; text-overflow: ellipsis; white-space: nowrap; }
+.apo-redesign .supplier-cost > strong { display: block; overflow: hidden; margin-top: 8px; font-family: var(--app-font-display), sans-serif; font-size: clamp(16px, 1.55vw, 20px); font-variant-numeric: tabular-nums; letter-spacing: -.045em; text-overflow: ellipsis; white-space: nowrap; }
+.apo-redesign .cost-detail { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: var(--muted-ink); font-size: 9px; }
+.apo-redesign .preferred .cost-detail { color: hsl(var(--accent)); }
+.apo-redesign .preview-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 7px; }
+.apo-redesign .preview-section-title h3 { margin: 0; font-family: var(--app-font-display), sans-serif; font-size: 12px; font-weight: 700; letter-spacing: -.025em; }
+.apo-redesign .preview-section-title button { display: inline-flex; align-items: center; gap: 2px; padding: 3px 0; border: 0; color: hsl(var(--accent)); background: transparent; cursor: pointer; font-size: 9px; font-weight: 700; }
+.apo-redesign .preview-section-title button:hover { text-decoration: underline; }
+.apo-redesign .highlights { overflow: hidden; border: 1px solid hsl(var(--border) / .77); border-radius: 9px; }
+.apo-redesign .highlight-row { display: grid; min-height: 39px; grid-template-columns: 18px minmax(0, 1fr) 65px auto; align-items: center; gap: 7px; padding: 5px 9px; border-bottom: 1px solid hsl(var(--border) / .48); }
+.apo-redesign .highlight-row:last-child { border-bottom: 0; }
+.apo-redesign .winner-mark { display: grid; width: 17px; height: 17px; place-items: center; border-radius: 5px; color: hsl(var(--accent)); background: var(--soft-teal); }
+.apo-redesign .winner-mark.betonex { color: hsl(var(--foreground) / .62); background: hsl(var(--foreground) / .065); }
+.apo-redesign .highlight-name { overflow: hidden; color: hsl(var(--foreground) / .82); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.apo-redesign .highlight-winner { overflow: hidden; color: var(--muted-ink); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.apo-redesign .highlight-row strong { color: hsl(var(--foreground) / .85); font-family: var(--app-font-mono), monospace; font-size: 9px; font-weight: 500; text-align: right; white-space: nowrap; }
+.apo-redesign .source-note { display: flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--muted-ink); font-size: 8px; }
+.apo-redesign .source-note > svg { color: hsl(var(--accent)); }
+.apo-redesign .source-note strong { color: hsl(var(--foreground) / .76); font-weight: 600; }
+.apo-redesign .source-note-tail { margin-left: auto; }
+.apo-redesign .preview-footer { display: flex; min-height: 34px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 17px; border-top: 1px solid hsl(var(--border) / .62); color: var(--muted-ink); background: hsl(var(--background) / .45); font-family: var(--app-font-mono), monospace; font-size: 8px; }
+.apo-redesign .preview-footer > span:first-child { display: flex; align-items: center; gap: 6px; color: hsl(var(--accent)); }
+.apo-redesign .footer-status-dot { width: 5px; height: 5px; flex-basis: 5px; }
+.apo-redesign .section-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin: 1px 0 13px; }
+.apo-redesign .section-intro h3 { margin: 4px 0 0; font-family: var(--app-font-display), sans-serif; font-size: 19px; letter-spacing: -.045em; }
+.apo-redesign .item-count, .apo-redesign .currency-pill { padding: 5px 8px; border: 1px solid hsl(var(--border) / .8); border-radius: 6px; color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 8px; white-space: nowrap; }
+.apo-redesign .legend { display: flex; align-items: center; gap: 14px; margin: 0 0 10px 2px; color: var(--muted-ink); font-size: 9px; }
+.apo-redesign .legend span { display: inline-flex; align-items: center; gap: 6px; }
+.apo-redesign .legend i { width: 7px; height: 7px; border-radius: 2px; background: hsl(var(--accent)); }
+.apo-redesign .legend .legend-b { background: hsl(var(--foreground) / .38); }
+.apo-redesign .material-table { overflow: hidden; border: 1px solid hsl(var(--border) / .8); border-radius: 9px; }
+.apo-redesign .material-table-head, .apo-redesign .material-row { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(45px, .55fr) minmax(63px, .78fr) minmax(63px, .78fr); align-items: center; gap: 7px; padding: 9px 10px; }
+.apo-redesign .material-table-head { color: var(--muted-ink); background: hsl(var(--secondary) / .48); font-family: var(--app-font-mono), monospace; font-size: 7px; letter-spacing: .045em; }
+.apo-redesign .material-table-head span:not(:first-child), .apo-redesign .material-row > strong { text-align: right; }
+.apo-redesign .material-row { min-height: 53px; border-top: 1px solid hsl(var(--border) / .52); }
+.apo-redesign .material-name { display: flex; min-width: 0; align-items: flex-start; gap: 7px; color: hsl(var(--foreground) / .84); font-size: 9px; line-height: 1.45; }
+.apo-redesign .material-name .winner-mark { width: 15px; height: 15px; flex: 0 0 15px; margin-top: 1px; }
+.apo-redesign .material-name small { display: block; margin-top: 2px; color: var(--muted-ink); font-size: 8px; }
+.apo-redesign .material-quantity { color: hsl(var(--foreground) / .8); font-family: var(--app-font-mono), monospace; font-size: 8px; text-align: right; }
+.apo-redesign .material-quantity small { color: var(--muted-ink); }
+.apo-redesign .material-row > strong { color: hsl(var(--foreground) / .7); font-family: var(--app-font-mono), monospace; font-size: 8px; font-weight: 500; }
+.apo-redesign .material-row > strong.winning-price { color: hsl(var(--accent)); font-weight: 700; }
+.apo-redesign .material-footnote { display: flex; align-items: center; gap: 6px; margin-top: 12px; color: hsl(var(--accent)); font-size: 9px; }
+.apo-redesign .cost-chart { margin-top: 10px; padding: 14px 13px 10px; border: 1px solid hsl(var(--border) / .8); border-radius: 10px; background: hsl(var(--card) / .62); }
+.apo-redesign .chart-topline { display: flex; align-items: baseline; justify-content: space-between; color: hsl(var(--foreground) / .72); font-size: 9px; }
+.apo-redesign .chart-topline strong { color: hsl(var(--foreground)); font-family: var(--app-font-mono), monospace; font-size: 11px; font-weight: 500; }
+.apo-redesign .chart-second { margin-top: 12px; }
+.apo-redesign .bar-track { height: 7px; margin-top: 6px; overflow: hidden; border-radius: 10px; background: hsl(var(--secondary) / .75); }
+.apo-redesign .bar-fill { display: block; height: 100%; border-radius: inherit; }
+.apo-redesign .bar-han { width: 94.4%; background: hsl(var(--accent)); }
+.apo-redesign .bar-betonex { width: 100%; background: hsl(var(--foreground) / .33); }
+.apo-redesign .chart-caption { display: flex; justify-content: space-between; margin-top: 8px; color: var(--muted-ink); font-family: var(--app-font-mono), monospace; font-size: 8px; }
+.apo-redesign .cost-breakdown { overflow: hidden; margin-top: 12px; border: 1px solid hsl(var(--border) / .8); border-radius: 9px; }
+.apo-redesign .cost-breakdown > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(72px, .8fr) minmax(72px, .8fr); gap: 8px; padding: 10px; border-top: 1px solid hsl(var(--border) / .5); color: hsl(var(--foreground) / .77); font-size: 9px; }
+.apo-redesign .cost-breakdown .breakdown-head { border-top: 0; color: var(--muted-ink); background: hsl(var(--secondary) / .48); font-family: var(--app-font-mono), monospace; font-size: 7px; letter-spacing: .04em; }
+.apo-redesign .cost-breakdown > div > :not(:first-child) { text-align: right; }
+.apo-redesign .cost-breakdown strong { color: hsl(var(--foreground) / .82); font-family: var(--app-font-mono), monospace; font-size: 8px; font-weight: 500; }
+.apo-redesign .cost-breakdown strong.free-cost { color: hsl(var(--accent)); }
+.apo-redesign .cost-breakdown .breakdown-total { background: hsl(var(--secondary) / .33); font-weight: 700; }
+.apo-redesign .cost-breakdown .breakdown-total strong { color: hsl(var(--foreground)); font-weight: 700; }
+.apo-redesign .cost-insight { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 10px; border: 1px solid hsl(var(--primary) / .21); border-radius: 8px; color: hsl(var(--foreground) / .75); background: hsl(var(--primary) / .08); }
+.apo-redesign .insight-mark { display: grid; width: 16px; height: 16px; flex: 0 0 16px; place-items: center; border-radius: 50%; color: hsl(var(--primary-foreground)); background: var(--gold); font-family: var(--app-font-display), sans-serif; font-size: 10px; font-weight: 700; }
+.apo-redesign .cost-insight p { margin: 0; font-size: 9px; line-height: 1.55; }
+
+.apo-redesign.is-conversation-expanded .workspace-columns { grid-template-columns: minmax(0, 1fr); }
+.apo-redesign.is-conversation-expanded .preview-pane { display: none; }
+.apo-redesign.is-conversation-expanded .conversation-pane { width: min(100%, 1040px); justify-self: center; }
+.apo-redesign.is-conversation-expanded .transcript { padding-right: clamp(24px, 8vw, 90px); padding-left: clamp(24px, 8vw, 90px); }
+.apo-redesign.is-conversation-expanded .composer-area { padding-right: clamp(14px, 5vw, 52px); padding-left: clamp(14px, 5vw, 52px); }
+
+.apo-redesign .dialog-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 18px; background: hsl(var(--foreground) / .29); backdrop-filter: blur(3px); animation: apo-fade-in .16s ease-out both; }
+.apo-redesign .workspace-dialog { width: min(100%, 480px); padding: 21px; border: 1px solid hsl(var(--border)); border-radius: 15px; background: hsl(var(--card)); box-shadow: 0 24px 75px hsl(var(--foreground) / .22); animation: apo-dialog-in .2s ease-out both; }
+.apo-redesign .dialog-heading { display: flex; align-items: center; gap: 11px; }
+.apo-redesign .dialog-icon { display: grid; width: 35px; height: 35px; flex: 0 0 35px; place-items: center; border: 1px solid hsl(var(--accent) / .18); border-radius: 10px; color: hsl(var(--accent)); background: var(--soft-teal); }
+.apo-redesign .dialog-heading h2 { margin: 3px 0 0; font-family: var(--app-font-display), sans-serif; font-size: 17px; letter-spacing: -.035em; }
+.apo-redesign .dialog-close { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; margin-left: auto; border: 1px solid transparent; border-radius: 7px; color: var(--muted-ink); background: transparent; cursor: pointer; }
+.apo-redesign .dialog-close:hover { border-color: var(--line); background: hsl(var(--secondary) / .6); }
+.apo-redesign .dialog-description { margin: 14px 0 15px; color: var(--muted-ink); font-size: 10px; line-height: 1.7; }
+.apo-redesign .mail-label { display: block; margin-bottom: 6px; color: hsl(var(--foreground) / .75); font-size: 10px; font-weight: 700; }
+.apo-redesign .mail-textarea { display: block; width: 100%; min-height: 170px; resize: vertical; padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: hsl(var(--background) / .65); font-size: 11px; line-height: 1.7; }
+.apo-redesign .mail-textarea::placeholder { color: hsl(var(--muted-foreground) / .75); }
+.apo-redesign .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.apo-redesign .text-button, .apo-redesign .primary-button { display: inline-flex; min-height: 35px; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 10px; font-weight: 700; }
+.apo-redesign .text-button { color: var(--muted-ink); background: transparent; }
+.apo-redesign .text-button:hover { color: var(--ink); background: hsl(var(--secondary) / .55); }
+.apo-redesign .primary-button { border-color: hsl(var(--primary) / .7); color: hsl(var(--primary-foreground)); background: var(--gold); }
+.apo-redesign .primary-button:hover { filter: brightness(.97); }
+.apo-redesign .document-options { display: grid; gap: 6px; }
+.apo-redesign .document-options button { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid hsl(var(--border) / .78); border-radius: 9px; background: hsl(var(--background) / .4); cursor: pointer; text-align: left; transition: background .16s, border .16s; }
+.apo-redesign .document-options button:hover { border-color: hsl(var(--accent) / .4); background: var(--soft-teal); }
+.apo-redesign .document-file-icon { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border-radius: 8px; color: hsl(var(--accent)); background: var(--soft-teal); }
+.apo-redesign .document-options button > span:nth-child(2) { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.apo-redesign .document-options b { overflow: hidden; color: hsl(var(--foreground) / .88); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.apo-redesign .document-options small { color: var(--muted-ink); font-size: 9px; }
+.apo-redesign .document-options button > svg { color: var(--muted-ink); }
+.apo-redesign .workspace-toast { position: fixed; z-index: 70; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 8px; max-width: min(420px, calc(100vw - 32px)); padding: 11px 14px; border: 1px solid hsl(var(--accent) / .2); border-radius: 9px; color: hsl(var(--foreground) / .9); background: hsl(var(--card)); box-shadow: 0 9px 30px hsl(var(--foreground) / .14); font-size: 10px; animation: apo-dialog-in .18s ease-out both; }
+.apo-redesign .workspace-toast svg { flex: 0 0 15px; color: hsl(var(--accent)); }
+
+@keyframes apo-message-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes apo-tab-in { from { opacity: .55; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes apo-menu-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes apo-context-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes apo-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes apo-dialog-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 999px) {
+  .apo-redesign { min-height: 500px; }
+  .apo-redesign .workspace-topbar { min-height: 64px; padding: 0 18px; }
+  .apo-redesign .workspace-columns { display: block; padding: 12px 14px 14px; }
+  .apo-redesign .conversation-pane, .apo-redesign .preview-pane { height: 100%; }
+  .apo-redesign .preview-pane { display: none; }
+  .apo-redesign .workspace-columns.mobile-apo-active .conversation-pane { display: none; }
+  .apo-redesign .workspace-columns.mobile-apo-active .preview-pane { display: flex; }
+  .apo-redesign .mobile-panel-switch { display: flex; flex: 0 0 44px; align-items: stretch; gap: 4px; padding: 5px 14px 0; border-bottom: 1px solid hsl(var(--border) / .62); background: hsl(var(--card) / .55); }
+  .apo-redesign .mobile-panel-switch button { position: relative; display: inline-flex; min-width: 0; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 0; color: var(--muted-ink); background: transparent; cursor: pointer; font-size: 10px; font-weight: 700; }
+  .apo-redesign .mobile-panel-switch button.active { color: hsl(var(--foreground)); }
+  .apo-redesign .mobile-panel-switch button.active::after { position: absolute; right: 9px; bottom: -1px; left: 9px; height: 2px; background: hsl(var(--accent)); content: ''; }
+  .apo-redesign .mobile-panel-switch button > span { display: grid; min-width: 17px; height: 17px; place-items: center; padding: 0 4px; border-radius: 6px; color: var(--muted-ink); background: hsl(var(--secondary) / .8); font-family: var(--app-font-mono), monospace; font-size: 8px; }
+  .apo-redesign.is-conversation-expanded .workspace-columns { display: block; }
+}
+
+@media (max-width: 600px) {
+  .apo-redesign .workspace-topbar { min-height: 60px; padding: 0 12px; }
+  .apo-redesign .topbar-leading { gap: 10px; }
+  .apo-redesign .back-button { gap: 4px; padding: 7px 4px; font-size: 10px; }
+  .apo-redesign .topbar-divider { height: 24px; }
+  .apo-redesign .workspace-heading h1 { max-width: 43vw; font-size: 12px; }
+  .apo-redesign .workspace-eyebrow { font-size: 8px; }
+  .apo-redesign .topbar-trailing { gap: 0; }
+  .apo-redesign .context-toggle { width: 33px; height: 33px; justify-content: center; padding: 0; }
+  .apo-redesign .context-toggle span, .apo-redesign .context-toggle > svg:last-child, .apo-redesign .save-state { display: none; }
+  .apo-redesign .comparison-context { align-items: flex-start; flex-direction: column; gap: 10px; padding: 12px 16px; }
+  .apo-redesign .context-project { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .apo-redesign .context-pair { flex-wrap: wrap; }
+  .apo-redesign .context-meta { font-size: 9px; }
+  .apo-redesign .mobile-panel-switch { flex-basis: 42px; padding-right: 10px; padding-left: 10px; }
+  .apo-redesign .workspace-columns { padding: 9px 8px 8px; }
+  .apo-redesign .conversation-pane, .apo-redesign .preview-pane { border-radius: 11px; }
+  .apo-redesign .conversation-head { min-height: 64px; padding: 10px 11px; }
+  .apo-redesign .apo-orbit { width: 31px; height: 31px; flex-basis: 31px; }
+  .apo-redesign .conversation-title { gap: 8px; }
+  .apo-redesign .conversation-title h2 { font-size: 13px; }
+  .apo-redesign .conversation-title p { max-width: 50vw; font-size: 9px; }
+  .apo-redesign .online-pill { padding: 3px 5px; font-size: 7px; }
+  .apo-redesign .conversation-actions { gap: 1px; }
+  .apo-redesign .undo-action { width: 31px; padding: 0; }
+  .apo-redesign .undo-action span { display: none; }
+  .apo-redesign .expand-action { width: 29px; }
+  .apo-redesign .chat-context-line { min-height: 31px; padding: 0 12px; font-size: 8px; }
+  .apo-redesign .transcript { padding: 17px 12px 12px; }
+  .apo-redesign .turn-list { gap: 20px; }
+  .apo-redesign .user-bubble { max-width: 96%; padding: 9px 11px; font-size: 11px; }
+  .apo-redesign .assistant-reply { margin-right: 6px; font-size: 10px; }
+  .apo-redesign .composer-area { padding: 9px 8px calc(9px + env(safe-area-inset-bottom)); }
+  .apo-redesign .composer-top { gap: 6px; padding: 6px 6px 3px; }
+  .apo-redesign .composer-top textarea { min-height: 34px; font-size: 10px; }
+  .apo-redesign .add-button, .apo-redesign .send-button { width: 32px; height: 32px; }
+  .apo-redesign .send-button { flex-basis: 32px; }
+  .apo-redesign .composer-bottom { padding: 0 8px 7px 11px; font-size: 7px; }
+  .apo-redesign .preview-head { min-height: 59px; padding: 9px 11px; }
+  .apo-redesign .preview-heading { gap: 8px; }
+  .apo-redesign .preview-icon { width: 29px; height: 29px; }
+  .apo-redesign .export-button { min-height: 30px; gap: 5px; padding: 0 8px; font-size: 9px; }
+  .apo-redesign .preview-suppliers { min-height: 39px; padding: 0 12px; }
+  .apo-redesign .preview-tabs { min-height: 41px; justify-content: space-between; gap: 8px; padding: 0 12px; }
+  .apo-redesign .preview-tabs button { font-size: 9px; }
+  .apo-redesign .preview-content { padding: 12px 11px; }
+  .apo-redesign .recommendation { padding: 12px; }
+  .apo-redesign .recommendation h3 { font-size: 16px; }
+  .apo-redesign .recommendation > p { font-size: 9px; }
+  .apo-redesign .rec-score { font-size: 7px; }
+  .apo-redesign .cost-comparison { gap: 6px; }
+  .apo-redesign .supplier-cost { padding: 9px 8px; }
+  .apo-redesign .supplier-cost-label { gap: 4px; font-size: 8px; }
+  .apo-redesign .supplier-cost-label .supplier-token { width: 17px; height: 17px; flex-basis: 17px; }
+  .apo-redesign .best-tag { max-width: 60px; padding: 3px 4px; font-size: 6px; }
+  .apo-redesign .supplier-cost > strong { font-size: clamp(15px, 5vw, 20px); }
+  .apo-redesign .cost-detail { font-size: 8px; }
+  .apo-redesign .highlight-row { grid-template-columns: 17px minmax(0, 1fr) 57px auto; gap: 5px; padding: 5px 6px; }
+  .apo-redesign .highlight-name { font-size: 8px; }
+  .apo-redesign .highlight-winner { font-size: 7px; }
+  .apo-redesign .highlight-row strong { font-size: 8px; }
+  .apo-redesign .source-note-tail { display: none; }
+  .apo-redesign .material-table-head, .apo-redesign .material-row { grid-template-columns: minmax(0, 1.4fr) 42px minmax(55px, .8fr) minmax(55px, .8fr); gap: 5px; padding-right: 7px; padding-left: 7px; }
+  .apo-redesign .material-table-head { font-size: 6px; }
+  .apo-redesign .material-name { gap: 5px; font-size: 8px; }
+  .apo-redesign .material-row > strong { font-size: 7px; }
+  .apo-redesign .material-quantity { font-size: 7px; }
+  .apo-redesign .cost-breakdown > div { grid-template-columns: minmax(0, 1fr) minmax(68px, .8fr) minmax(68px, .8fr); gap: 5px; padding: 9px 7px; font-size: 8px; }
+  .apo-redesign .cost-breakdown strong { font-size: 7px; }
+  .apo-redesign .preview-footer { padding: 0 11px; font-size: 7px; }
+  .apo-redesign .workspace-dialog { padding: 17px; }
+  .apo-redesign .workspace-dialog h2 { font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .apo-redesign *, .apo-redesign *::before, .apo-redesign *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
