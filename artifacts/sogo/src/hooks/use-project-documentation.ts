@@ -19,6 +19,11 @@ import {
 } from '@/lib/api';
 import { isApiConfigured, isAuthConfigured } from '@/lib/config';
 import { getProjectDocumentationFileError } from '@/lib/project-documentation-files';
+import {
+  isProjectDocumentationJobActive,
+  isProjectDocumentationMergeFailed,
+  isProjectDocumentationResultRetryable,
+} from '@/lib/project-documentation-state';
 import { withPurchaseAreaQueryKey } from '@/lib/project-area-context';
 
 type StoredDocumentationJob = {
@@ -147,7 +152,7 @@ function writeStorage(storageKey: string, value: StoredDocumentationJob | null) 
 }
 
 function isActiveJobStatus(status?: string) {
-  return status === 'QUEUED' || status === 'RUNNING' || status === 'RETRY_WAIT';
+  return isProjectDocumentationJobActive(status);
 }
 
 export function useProjectDocumentation({
@@ -663,7 +668,7 @@ export function useProjectDocumentation({
   ]);
 
   const prepare = useCallback(async () => {
-    if (isPreparingScope || startMutation.isPending) return;
+    if (isPreparingScope || startMutation.isPending || isProjectDocumentationJobActive(job?.status)) return;
     const normalizedRules = purchaseRules.map((rule) => rule.trim());
     if (normalizedRules.some((rule) => !rule)) {
       setError('Uzupełnij albo usuń puste warunki zakupowe przed rozpoczęciem odczytu.');
@@ -687,7 +692,7 @@ export function useProjectDocumentation({
     } finally {
       setIsPreparingScope(false);
     }
-  }, [documentationName, isPreparingScope, preparationRequest, prepareScope, purchaseRules, selectedDocumentIds, startMutation.isPending, startWithRequest]);
+  }, [job?.status, documentationName, isPreparingScope, preparationRequest, prepareScope, purchaseRules, selectedDocumentIds, startMutation.isPending, startWithRequest]);
 
   const retrySameRequest = useCallback(() => {
     if (!storedJob || !storageKey || startMutation.isPending) return;
@@ -719,12 +724,8 @@ export function useProjectDocumentation({
   }, [contextKey, projectId, purchaseAreaId, startMutation, storageKey, storedJob]);
 
   const retry = useCallback(() => {
-    const resultNeedsRetry = Boolean(
-      jobQuery.data?.result?.incomplete
-      || jobQuery.data?.result?.mergeNeedsReview
-      || jobQuery.data?.result?.requiresReview
-      || (jobQuery.data?.result?.failedDocuments?.length ?? 0) > 0,
-    );
+    const resultNeedsRetry = isProjectDocumentationResultRetryable(jobQuery.data?.result);
+    if (isProjectDocumentationJobActive(job?.status)) { void jobQuery.refetch(); return; }
     if (job?.status === 'FAILED' || resultNeedsRetry) retryFailedJob();
     else if (storedJob) retrySameRequest();
     else void documentsQuery.refetch();
@@ -732,6 +733,7 @@ export function useProjectDocumentation({
 
   const applyResult = useCallback((requestedMode: 'APPEND' | 'REPLACE', acceptIncomplete = false) => {
     if (!storedJob?.jobId || !storageKey || !jobQuery.data?.result) return;
+    if (isProjectDocumentationMergeFailed(jobQuery.data.result)) { setApplyError('Najpierw dokończ łączenie materiałów.'); return; }
     if (!jobQuery.data.result.materials.length) {
       setApplyError('Wynik nie zawiera materiałów, których można dodać do listy.');
       return;
@@ -865,7 +867,8 @@ export function useProjectDocumentation({
 
   const applyMutationPending = applyMutation.isPending;
   const canPrepare = Boolean(
-    !hasUnsavedChanges
+    !isProjectDocumentationJobActive(job?.status)
+    && !hasUnsavedChanges
     && !startMutation.isPending
     && !applyMutationPending
     && !isUploading
@@ -888,7 +891,7 @@ export function useProjectDocumentation({
   }, [isResultApplied, job]);
 
   const onPrepare = useCallback(() => {
-    if (isPreparingScope || startMutation.isPending) return;
+    if (isPreparingScope || startMutation.isPending || isProjectDocumentationJobActive(job?.status)) return;
     if (hasUnsavedChanges) {
       setError('Najpierw zapisz lub odrzuć niezapisane zmiany listy materiałów.');
       return;
@@ -896,7 +899,7 @@ export function useProjectDocumentation({
     void prepare().catch((operationError) => {
       setError(errorMessage(operationError, 'Nie udało się zapisać zakresu zakupowego przed odczytem.'));
     });
-  }, [hasUnsavedChanges, isPreparingScope, prepare, startMutation.isPending]);
+  }, [job?.status, hasUnsavedChanges, isPreparingScope, prepare, startMutation.isPending]);
 
   const onClearResult = useCallback(() => {
     clearStoredJob();

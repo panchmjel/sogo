@@ -20,6 +20,13 @@ import {
   X,
 } from 'lucide-react';
 import { type ChangeEvent, type DragEvent, type ReactNode, useRef, useState } from 'react';
+import {
+  formatDocumentationQuantity,
+  getUnreadProjectDocumentationFiles,
+  isProjectDocumentationJobActive,
+  isProjectDocumentationMergeFailed,
+  isProjectDocumentationMerging,
+} from '@/lib/project-documentation-state';
 
 export type DocumentationDocument = {
   documentId: string;
@@ -32,6 +39,8 @@ export type DocumentationDocument = {
 export type DocumentationJob = {
   jobId: string;
   status: 'QUEUED' | 'RUNNING' | 'RETRY_WAIT' | 'DONE' | 'FAILED' | string;
+  phase?: string;
+  activeStage?: string;
   completedStages?: number;
   totalStages?: number;
   errorMessage?: string;
@@ -98,6 +107,8 @@ export type DocumentationResult = {
     state?: string;
     errorMessage?: string;
   }>;
+  resultState?: string;
+  canApply?: boolean;
   mergeNeedsReview?: boolean;
   requiresReview?: boolean;
 };
@@ -443,12 +454,12 @@ function readStateLabel(state: string) {
 }
 
 function GenerationStatus({ job, result, onRetry }: { job: DocumentationJob; result?: DocumentationResult | null; onRetry?: () => void }) {
-  const active = ['QUEUED', 'RUNNING', 'RETRY_WAIT'].includes(job.status);
+  const active = isProjectDocumentationJobActive(job.status);
   const failed = job.status === 'FAILED';
   const title = job.status === 'QUEUED'
     ? 'Zadanie czeka w kolejce'
-    : job.status === 'RUNNING'
-      ? 'Dokumenty są odczytywane'
+    : job.status === 'RUNNING' || job.status === 'MERGING'
+      ? (isProjectDocumentationMerging(job) ? 'Łączymy materiały z odczytanych plików' : 'Odczytujemy dokumenty')
       : job.status === 'RETRY_WAIT'
         ? 'Odczyt oczekuje na ponowienie'
         : job.status === 'DONE'
@@ -462,8 +473,8 @@ function GenerationStatus({ job, result, onRetry }: { job: DocumentationJob; res
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold">{title}</p>
-          {(job.errorMessage || job.message) && <p className="mt-1 break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{job.errorMessage || job.message}</p>}
-          {(failed || job.status === 'RETRY_WAIT') && onRetry && <Button icon={RefreshCw} onClick={onRetry} testId="button-retry-documentation" className="mt-3">Ponów odczyt</Button>}
+          <p className="mt-1 text-sm text-muted-foreground">{active ? 'Możesz zamknąć to okno. Przygotowanie trwa w tle.' : failed ? 'Zachowaliśmy odczytane dane. Spróbuj ponownie.' : 'Sprawdź materiały przed zapisaniem listy.'}</p>
+          {failed && onRetry && <Button icon={RefreshCw} onClick={onRetry} testId="button-retry-documentation" className="mt-3">Ponów odczyt</Button>}
         </div>
       </div>
       {job.documents?.length ? (
@@ -483,8 +494,10 @@ function GenerationStatus({ job, result, onRetry }: { job: DocumentationJob; res
 type CalculationPart = { name?: string; quantity?: string | number | null; unit?: string | null; source?: string | DocumentationSourceReference | DocumentationSourceReference[] };
 
 function calculationParts(value: unknown): CalculationPart[] | null {
-  if (!value || typeof value !== 'object' || !Array.isArray((value as { components?: unknown }).components)) return null;
-  const parts = (value as { components: unknown[] }).components;
+  if (!value || typeof value !== 'object') return null;
+  const record = value as { components?: unknown; operands?: unknown };
+  const parts = record.components ?? record.operands;
+  if (!Array.isArray(parts)) return null;
   if (!parts.every((part) => part && typeof part === 'object')) return null;
   return parts as CalculationPart[];
 }
@@ -538,7 +551,7 @@ function MaterialPreview({ material, onOpenDocument }: { material: Documentation
         </div>
         <div className="min-w-0 text-sm sm:max-w-[45%] sm:text-right">
           <p className={cn('break-words font-semibold [overflow-wrap:anywhere]', corrected && 'text-accent')}>
-            {corrected ? 'Wartość w wyniku' : 'Ilość'}: {material.quantity || 'Do ustalenia'}{material.unit ? ` ${material.unit}` : ''}
+            {corrected ? 'Wartość w wyniku' : 'Ilość'}: {formatDocumentationQuantity(material.quantity)}{material.unit ? ` ${material.unit}` : ''}
           </p>
           {corrected && <p className="mt-1 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">Odczyt ze źródła: {String(original)}{material.unit ? ` ${material.unit}` : ''}</p>}
         </div>
@@ -564,13 +577,20 @@ function ResultPreview({
 }) {
   const [acceptIncomplete, setAcceptIncomplete] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
-  const reviewDocs = [...(result.failedDocuments ?? [])];
-  for (const document of unreadDocuments) {
-    if (document.state !== 'READ' && document.state !== 'NEEDS_REVIEW' && !reviewDocs.some((failed) => failed.documentId === document.documentId || failed.filename === document.filename)) {
-      reviewDocs.push({ documentId: document.documentId, filename: document.filename, state: document.state });
-    }
-  }
-  const needsAcceptance = Boolean(result.incomplete || reviewDocs.length || result.mergeNeedsReview || result.requiresReview);
+  const reviewDocs = getUnreadProjectDocumentationFiles(result.failedDocuments, unreadDocuments);
+  const mergeFailed = isProjectDocumentationMergeFailed(result);
+  const needsAcceptance = Boolean(result.incomplete || reviewDocs.length);
+  const [search, setSearch] = useState('');
+  const [missingOnly, setMissingOnly] = useState(false);
+  const shownMaterials = result.materials.filter((item) => item.name.toLocaleLowerCase('pl').includes(search.toLocaleLowerCase('pl')) && (!missingOnly || item.quantity == null));
+  if (mergeFailed) return (
+    <section className="rounded-2xl border border-border bg-card p-6" data-testid="documentation-merge-required" role="status">
+      <h3 className="text-xl font-bold">Trzeba dokończyć łączenie materiałów</h3>
+      <p className="mt-3">{reviewDocs.length ? 'Część plików wymaga ponownego odczytu.' : 'Pliki zostały odczytane.'} Nie powstała jeszcze wspólna lista bez powtórzeń. Twoja obecna lista pozostaje bez zmian.</p>
+      {onRetry && <Button icon={RefreshCw} kind="primary" onClick={onRetry} testId="button-retry-documentation-merge" className="mt-4">Ponów łączenie materiałów</Button>}
+      <details className="mt-5"><summary className="cursor-pointer py-3">Zobacz roboczy odczyt plików</summary><p className="mb-3 text-sm text-muted-foreground">Pozycje mogą się powtarzać. Nie są gotowe do zapisania.</p>{result.materials.map((material) => <MaterialPreview key={material.itemId} material={material} onOpenDocument={onOpenDocument} />)}</details>
+    </section>
+  );
   const issues = result.documentationIssues.filter((issue) => !issue.resolved);
   return (
     <section className="rounded-[22px] border border-border bg-card/90 p-4 shadow-sm sm:p-6" data-testid="documentation-result-preview">
@@ -589,7 +609,9 @@ function ResultPreview({
       </div>
       {result.materials.length > 0 ? (
         <div className="mt-5 overflow-hidden rounded-2xl border border-border bg-background/55">
-          {result.materials.map((material) => <MaterialPreview key={material.itemId} material={material} onOpenDocument={onOpenDocument} />)}
+          <div className="flex flex-wrap items-center gap-4 p-3"><input aria-label="Szukaj materiału" placeholder="Szukaj materiału…" value={search} onChange={(event) => setSearch(event.target.value)} className="min-h-11 rounded-lg border border-border bg-background px-3" /><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={missingOnly} onChange={(event) => setMissingOnly(event.target.checked)} /> Tylko ilości do ustalenia</label></div>
+          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-secondary"><tr><th className="p-3">Materiał</th><th className="p-3">Ilość</th><th className="p-3">Jednostka</th><th className="p-3">Źródło</th></tr></thead><tbody>{shownMaterials.map((material) => <tr key={material.itemId} className="border-t border-border"><td className="min-w-48 p-3">{material.name}{material.source?.calculation != null && <CalculationDetails calculation={material.source.calculation} onOpenDocument={onOpenDocument} />}</td><td className="p-3">{formatDocumentationQuantity(material.quantity)}</td><td className="p-3">{material.unit ?? '—'}</td><td className="p-3"><SourceDetails references={material.source?.references} compact onOpenDocument={onOpenDocument} /></td></tr>)}</tbody></table></div>
+          {!shownMaterials.length && <p className="p-4 text-sm">Brak materiałów pasujących do filtra.</p>}
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-5" role="status">
@@ -601,7 +623,7 @@ function ResultPreview({
         <details className="group mt-4 rounded-2xl border border-border bg-background/45">
           <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 text-left font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary/50 [&::-webkit-details-marker]:hidden">
             <ChevronDown size={16} className="transition-transform group-open:rotate-180" />
-            Warunki techniczne <span className="font-mono text-xs text-muted-foreground">{result.technicalRequirements.length}</span>
+            Parametry z dokumentacji <span className="font-mono text-xs text-muted-foreground">{result.technicalRequirements.length}</span>
           </summary>
           <ul className="grid gap-3 border-t border-border px-4 py-3">
             {result.technicalRequirements.map((item) => <li key={item.id} className="min-w-0 break-words text-sm leading-5 [overflow-wrap:anywhere]"><p>{item.text}</p><div className="mt-1"><SourceDetails references={item.references} compact onOpenDocument={onOpenDocument} /></div></li>)}
@@ -612,7 +634,7 @@ function ResultPreview({
         <details className="group mt-3 rounded-2xl border border-border bg-background/45">
           <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 text-left font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary/50 [&::-webkit-details-marker]:hidden">
             <ChevronDown size={16} className="transition-transform group-open:rotate-180" />
-            Uwagi z dokumentacji <span className="font-mono text-xs text-muted-foreground">{result.purchaseRules?.length ?? 0}</span>
+            Twoje ustalenia <span className="font-mono text-xs text-muted-foreground">{result.purchaseRules?.length ?? 0}</span>
           </summary>
           <div className="grid gap-3 border-t border-border px-4 py-3">
             {result.purchaseRules?.map((rule, index) => <p key={`rule-${index}`} className="break-words text-sm leading-5 [overflow-wrap:anywhere]">{rule}</p>)}
@@ -630,7 +652,7 @@ function ResultPreview({
           </ul>
         </details>
       )}
-      {(result.incomplete || reviewDocs.length > 0 || result.mergeNeedsReview || result.requiresReview) && (
+      {(result.incomplete || reviewDocs.length > 0) && (
         <section className="mt-4 rounded-2xl border border-primary/40 bg-primary/10 p-4" role="status" data-testid="documentation-incomplete-warning">
           <div className="flex items-start gap-2">
             <AlertTriangle size={17} className="mt-0.5 shrink-0 text-accent" />
@@ -754,7 +776,7 @@ export function ProjectDocumentationPanel({
   const availableDocuments = [...scopeDocuments, ...projectDocuments].filter((document, index, all) => all.findIndex((entry) => entry.documentId === document.documentId) === index);
   const selectedWithoutListing = selectedDocumentIds.filter((id) => !availableDocuments.some((document) => document.documentId === id));
   const selectedDocumentRows = availableDocuments.filter((document) => selectedDocumentIds.includes(document.documentId));
-  const isRunning = ['QUEUED', 'RUNNING', 'RETRY_WAIT'].includes(job?.status ?? '');
+  const isRunning = isProjectDocumentationJobActive(job?.status);
   const showPreview = Boolean(result);
   return (
     <main className="mx-auto w-full max-w-[1120px] min-w-0 px-4 py-5 sm:px-6 sm:py-8" data-testid="documentation-panel">
@@ -782,7 +804,8 @@ export function ProjectDocumentationPanel({
         </section>
       ) : (
         <div className="mt-5 grid min-w-0 gap-5">
-          {!showPreview && (
+          {isRunning && job && <GenerationStatus job={job} result={result} />}
+          {!showPreview && !isRunning && (
             <>
               <section className="rounded-2xl border border-border bg-card/80 p-4 sm:p-5" aria-labelledby="documentation-files-title">
                 <div className="flex flex-wrap items-end justify-between gap-3">
@@ -844,10 +867,10 @@ export function ProjectDocumentationPanel({
               </section>
             </>
           )}
-          {showPreview && result && (
+          {showPreview && result && !isRunning && (
             <>
               {isRunning && job && <GenerationStatus job={job} result={result} onRetry={onRetry} />}
-              <ResultPreview result={result} onApply={onApplyResult} scopeItemCount={scopeItemCount} onClear={onClearResult} onOpenDocument={onOpenDocument} onRetry={onRetry} unreadDocuments={job?.documents} isApplying={isApplying} canApply={canApply} applyError={applyError} />
+              <ResultPreview key={job?.jobId} result={result} onApply={onApplyResult} scopeItemCount={scopeItemCount} onClear={onClearResult} onOpenDocument={onOpenDocument} onRetry={onRetry} unreadDocuments={job?.documents} isApplying={isApplying} canApply={canApply} applyError={applyError} />
             </>
           )}
         </div>

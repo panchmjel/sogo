@@ -194,6 +194,8 @@ export type AIJob = {
   comparisonBasis?: 'PROJECT_SCOPE' | string | null;
   scopeName?: string | null;
   scopeVersion?: number | null;
+  phase?: string;
+  activeStage?: string;
   completedStages?: number;
   totalStages?: number;
   applied?: boolean;
@@ -894,6 +896,7 @@ export type ComparisonScopeSource = {
 };
 
 export type DocumentationSourceReference = {
+  quote?: string | null;
   documentId?: string | null;
   filename?: string | null;
   documentName?: string | null;
@@ -957,6 +960,8 @@ export type ProjectDocumentationResult = {
   purchaseRules?: string[];
   incomplete?: boolean;
   failedDocuments?: ProjectDocumentationFailedDocument[];
+  resultState?: string;
+  canApply?: boolean;
   mergeNeedsReview?: boolean;
   requiresReview?: boolean;
 };

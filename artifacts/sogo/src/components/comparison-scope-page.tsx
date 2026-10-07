@@ -144,8 +144,8 @@ function toDraftItem(item: ApiComparisonScope['items'][number], projectId: strin
       ? { filename: reference.filename || reference.documentName || undefined }
       : {}),
     ...(reference.page == null ? {} : { page: reference.page }),
-    ...((reference.excerpt || reference.text)
-      ? { excerpt: reference.excerpt || reference.text || undefined }
+    ...((reference.excerpt || reference.text || reference.quote)
+      ? { excerpt: reference.excerpt || reference.text || reference.quote || undefined }
       : {}),
     ...(reference.verification ? { verification: reference.verification } : {}),
     ...(reference.type ? { type: reference.type } : {}),
@@ -191,8 +191,8 @@ function toWorkspaceReferences(references?: ApiDocumentationSourceReference[]) {
       ? { filename: reference.filename || reference.documentName || undefined }
       : {}),
     ...(reference.page == null ? {} : { page: reference.page }),
-    ...((reference.excerpt || reference.text)
-      ? { excerpt: reference.excerpt || reference.text || undefined }
+    ...((reference.excerpt || reference.text || reference.quote)
+      ? { excerpt: reference.excerpt || reference.text || reference.quote || undefined }
       : {}),
     ...(reference.verification ? { verification: reference.verification } : {}),
     ...(reference.type ? { type: reference.type } : {}),
@@ -242,6 +242,8 @@ function toDocumentationUiResult(result: ProjectDocumentationResult | null): Doc
       ...(document.state ? { state: document.state } : {}),
       ...(document.errorMessage ? { errorMessage: document.errorMessage } : {}),
     })),
+    resultState: result.resultState,
+    canApply: result.canApply,
     mergeNeedsReview: result.mergeNeedsReview,
     requiresReview: result.requiresReview,
   };
@@ -1156,6 +1158,8 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
         ? {
           jobId: documentation.job.jobId,
           status: documentation.job.status,
+          phase: documentation.job.phase,
+          activeStage: documentation.job.activeStage,
           completedStages: documentation.job.completedStages,
           totalStages: documentation.job.totalStages,
           errorMessage: documentation.job.errorMessage ?? undefined,

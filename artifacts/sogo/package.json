@@ -13,6 +13,7 @@
     "test:scope-errors": "node --experimental-strip-types --test tests/scope-error-handling.test.ts",
     "test:project-access": "node --experimental-strip-types --test tests/project-access-state.test.ts",
     "test:project-area": "node --experimental-strip-types --test tests/project-area-routing.test.ts",
+    "test:project-documentation": "node --experimental-strip-types --test tests/project-documentation-state.test.ts",
     "test:apo-summary": "node --experimental-strip-types --test tests/apo-summary.test.ts",
     "test:apo-material-state": "node --experimental-strip-types --test tests/apo-material-state.test.ts",
     "test:offer-questions": "node --experimental-strip-types --test tests/offer-questions-utils.test.ts",
