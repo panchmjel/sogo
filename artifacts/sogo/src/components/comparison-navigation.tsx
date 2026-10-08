@@ -89,7 +89,7 @@ function exportErrorMessage(error: unknown) {
   return 'Nie udało się przygotować eksportu XLSX.';
 }
 
-function downloadExportFile(payload: { fileName: string; contentType: string; base64: string; version: number; jobId: string }, expectedJobId: string, expectedVersion: number) {
+function prepareExportFile(payload: { fileName: string; contentType: string; base64: string; version: number; jobId: string }, expectedJobId: string, expectedVersion: number) {
   if (payload.jobId !== expectedJobId || payload.version !== expectedVersion) {
     throw new Error('Backend zwrócił plik dla innego porównania lub innej wersji.');
   }
@@ -99,16 +99,7 @@ function downloadExportFile(payload: { fileName: string; contentType: string; ba
   const binary = atob(payload.base64);
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
   const objectUrl = URL.createObjectURL(new Blob([bytes], { type: payload.contentType }));
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = payload.fileName;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  window.setTimeout(() => {
-    anchor.remove();
-    URL.revokeObjectURL(objectUrl);
-  }, 0);
+  return { url: objectUrl, fileName: payload.fileName };
 }
 
 export function ComparisonExportButton({
@@ -128,6 +119,11 @@ export function ComparisonExportButton({
   const { purchaseAreaId } = useProjectArea();
   const [confirmDraft, setConfirmDraft] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [preparedFile, setPreparedFile] = useState<{ url: string; fileName: string; context: string } | null>(null);
+  const exportContext = JSON.stringify([projectId, jobId, purchaseAreaId, reviewVersion, chatVersion]);
+  useEffect(() => () => {
+    if (preparedFile) URL.revokeObjectURL(preparedFile.url);
+  }, [preparedFile]);
   const reviewQuery = useQuery({
     queryKey: withPurchaseAreaQueryKey(['comparison-review', projectId, jobId, reviewVersion ?? null], purchaseAreaId),
     queryFn: ({ signal }) => getComparisonReview(projectId, jobId, reviewVersion, purchaseAreaId, signal),
@@ -149,7 +145,14 @@ export function ComparisonExportButton({
       return payload;
     },
     onSuccess: (payload) => {
-      downloadExportFile(payload, jobId, payload.version);
+      const file = prepareExportFile(payload, jobId, payload.version);
+      setPreparedFile({ ...file, context: exportContext });
+      const anchor = document.createElement('a');
+      anchor.href = file.url;
+      anchor.download = file.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
       setDownloaded(true);
       setConfirmDraft(false);
     },
@@ -195,11 +198,14 @@ export function ComparisonExportButton({
   if (!enabled) return null;
   return (
     <div className="relative flex shrink-0 flex-col items-end gap-2">
-       <button type="button" onClick={beginExport} disabled={!canExport} className="inline-flex h-9 max-w-full items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-bold shadow-sm disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-export-apo"><Download size={14} />{exportMutation.isPending ? 'Przygotowuję Excel…' : downloaded ? 'Plik pobrany' : 'Pobierz APO (.xlsx)'}</button>
+       <button type="button" onClick={beginExport} disabled={!canExport} className="inline-flex h-9 max-w-full items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-bold shadow-sm disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-export-apo"><Download size={14} />{exportMutation.isPending ? 'Przygotowuję Excel…' : downloaded ? 'Pobierz ponownie APO' : 'Pobierz APO (.xlsx)'}</button>
       {reviewQuery.isPending && <p className="text-[10px] text-muted-foreground">Pobieranie zapisanej wersji…</p>}
         {(reportQuery.isPending || reportQuery.isFetching) && <p className="text-[10px] text-muted-foreground">Odświeżanie raportu APO…</p>}
         {!viewingLatestReport && !reviewQuery.isPending && !reviewQuery.isFetching && !reportQuery.isPending && !reportQuery.isFetching && !reportQuery.isError && <p className="max-w-[260px] text-right text-[10px] leading-4 text-muted-foreground">{reviewVersion != null || chatVersion != null ? 'Wersja historyczna. Wróć do bieżącego APO, aby eksportować.' : 'Raport nie jest jeszcze zgodny z ostatnią zmianą. Eksport zostanie odblokowany po odświeżeniu.'}</p>}
         {version === 0 && !reviewQuery.isPending && !reviewQuery.isError && !reportQuery.isError && <p className="max-w-[260px] text-right text-[10px] leading-4 text-muted-foreground">APO jest dostępne bez wcześniejszego zapisu decyzji. <Link href={`${projectAreaPath(projectId, purchaseAreaId, `comparisons/${jobId}`)}?section=materials`} className="font-bold text-primary underline">Przejdź do materiałów</Link></p>}
+       {preparedFile && preparedFile.context === exportContext && !exportMutation.isPending && !exportMutation.isError && (
+         <a href={preparedFile.url} download={preparedFile.fileName} className="text-xs font-bold underline" data-testid="link-download-prepared-apo">Plik gotowy — zapisz Excel</a>
+       )}
        {reviewQuery.isError && <p className="max-w-[260px] text-right text-[10px] leading-4 text-destructive">{exportErrorMessage(reviewQuery.error)}</p>}
        {reportQuery.isError && <p className="max-w-[260px] text-right text-[10px] leading-4 text-destructive">{exportErrorMessage(reportQuery.error)}</p>}
       {exportMutation.isError && <p className="max-w-[260px] text-right text-[10px] leading-4 text-destructive">{exportErrorMessage(exportMutation.error)} <button type="button" onClick={beginExport} className="font-bold underline">Ponów</button></p>}

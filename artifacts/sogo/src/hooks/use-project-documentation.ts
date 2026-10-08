@@ -19,6 +19,7 @@ import {
 import { isApiConfigured, isAuthConfigured } from '@/lib/config';
 import { canPrepareMaterials } from '@/lib/document-types';
 import {
+  selectDocumentationJob,
   isProjectDocumentationJobActive,
   isProjectDocumentationMergeFailed,
   isProjectDocumentationResultRetryable,
@@ -284,42 +285,35 @@ export function useProjectDocumentation({
       if (dismissed) setDismissedJobId(dismissed);
 
       const saved = window.localStorage.getItem(storageKey);
-      if (saved) {
-        const restored = parseStoredDocumentationJob(saved);
-        if (!restored) {
-          setError('Nie udało się odczytać zapisanego zadania. Nie usunęliśmy jego danych; zamknij panel i sprawdź pamięć przeglądarki.');
-        } else {
-          setStoredJob(restored);
-          setOpen(true);
-          setDocumentationName(restored.request.name);
-          setPreparationRequest(restored.request.description);
-          setPurchaseRules(restored.request.purchaseRules);
-          setMode(restored.request.mode);
-          setSelectedDocumentIds(restored.request.documentIds.slice(0, 12));
-        }
-      }
+      const restored = saved ? parseStoredDocumentationJob(saved) : null;
       const queryJobId = new URLSearchParams(window.location.search).get('documentationJobId');
-      if (queryJobId && !saved) {
-        const draft = restoredDraft;
-        setStoredJob({
+      const selected = selectDocumentationJob<StoredDocumentationJob>(queryJobId, restored, (jobId) => ({
           request: {
             requestId: crypto.randomUUID(),
-            name: draft?.name ?? scopeRef.current?.name ?? areaName,
-            description: draft?.description ?? '',
-            purchaseRules: draft?.purchaseRules ?? scopeRef.current?.purchaseRules ?? [],
-            documentIds: draft?.documentIds ?? [],
+            name: scopeRef.current?.name ?? areaName,
+            description: '',
+            purchaseRules: [],
+            documentIds: [],
             expectedVersion: scopeRef.current?.version ?? 0,
-            mode: 'append',
+            mode: 'append' as const,
             applyAutomatically: false,
           },
-          jobId: queryJobId,
+          jobId,
           appliedByUser: false,
-        });
-        setUrlJobId(queryJobId);
-        setOpen(true);
-      } else {
-        setUrlJobId(queryJobId);
+        }));
+      if (saved && !restored && !queryJobId) {
+        setError('Nie udało się odczytać zapisanego zadania. Nie usunęliśmy jego danych; zamknij panel i sprawdź pamięć przeglądarki.');
       }
+      if (selected) {
+        setStoredJob(selected);
+        setOpen(true);
+        setDocumentationName(selected.request.name);
+        setPreparationRequest(selected.request.description);
+        setPurchaseRules(selected.request.purchaseRules);
+        setMode(selected.request.mode);
+        setSelectedDocumentIds(selected.request.documentIds.slice(0, 12));
+      }
+      setUrlJobId(queryJobId);
     } catch {
       setError('Nie udało się odczytać lokalnego stanu zadania. Odśwież stronę albo sprawdź ustawienia pamięci przeglądarki.');
     } finally {

@@ -76,3 +76,13 @@ export function getUnreadProjectDocumentationFiles(
   }
   return unread;
 }
+
+// An explicit result link must never be replaced by an older device-local job.
+export function selectDocumentationJob<T extends { jobId: string | null }>(
+  urlJobId: string | null,
+  saved: T | null,
+  fromLink: (jobId: string) => T,
+): T | null {
+  if (urlJobId && saved?.jobId !== urlJobId) return fromLink(urlJobId);
+  return saved;
+}

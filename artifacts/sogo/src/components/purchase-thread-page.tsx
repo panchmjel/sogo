@@ -870,6 +870,11 @@ function FilesPanel({
                         Wybierz do porównania
                       </button>
                     )}
+                    {type === 'OFFER' && !isOfferResultDocument(document) && (
+                      <Link href={projectAreaPath(api.projectId, api.purchaseAreaId, `documents/${encodeURIComponent(document.documentId)}`)} className="min-h-9 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2 text-[10px] font-bold hover:bg-primary/10">
+                        Odczytaj ofertę / sprawdź postęp
+                      </Link>
+                    )}
                     {type === 'INVOICE' && (
                       <span className="rounded-lg bg-secondary/60 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
                         Faktura — plik źródłowy; nie jest importowana do modułu faktur.
@@ -1353,6 +1358,7 @@ export function PurchaseThreadPage({ projectId }: Props) {
         scope={api.scope}
         scopeDocuments={api.documents}
         open={documentationFlowOpen}
+        onResume={() => setDocumentationFlowOpen(true)}
         preselectedDocumentIds={documentationPreselection}
         onClose={() => {
           setDocumentationFlowOpen(false);

@@ -263,6 +263,7 @@ export function ProjectDocumentationWorkspaceFlow({
   open,
   preselectedDocumentIds = [],
   onClose,
+  onResume,
 }: {
   projectId: string;
   purchaseAreaId: string | null;
@@ -272,6 +273,7 @@ export function ProjectDocumentationWorkspaceFlow({
   open: boolean;
   preselectedDocumentIds?: string[];
   onClose: () => void;
+  onResume?: () => void;
 }) {
   const queryClient = useQueryClient();
   const { authUserId } = useApiSession();
@@ -406,6 +408,11 @@ export function ProjectDocumentationWorkspaceFlow({
 
   return (
     <>
+      {!open && documentation.job && !documentation.job.applied && onResume && (
+        <button type="button" onClick={onResume} className="fixed bottom-4 right-4 z-30 max-w-[calc(100vw-2rem)] rounded-xl border border-primary/30 bg-card px-4 py-3 text-sm font-semibold shadow-lg">
+          {documentation.job.status === 'DONE' ? 'Dokumentacja: sprawdź wynik' : documentation.job.status === 'FAILED' ? 'Dokumentacja: sprawdź zatrzymane zadanie' : 'Dokumentacja: zobacz postęp'}
+        </button>
+      )}
       <ProjectDocumentationPanel
         open={open && documentation.open}
         onClose={closePanel}

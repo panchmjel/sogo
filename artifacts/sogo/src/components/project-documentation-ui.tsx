@@ -457,6 +457,7 @@ function readStateLabel(state: string) {
 function GenerationStatus({ job, result, onRetry }: { job: DocumentationJob; result?: DocumentationResult | null; onRetry?: () => void }) {
   const active = isProjectDocumentationJobActive(job.status);
   const failed = job.status === 'FAILED';
+  const failedMerging = failed && (isProjectDocumentationMerging(job) || Boolean(job.documents?.length && job.documents.every((document) => document.state === 'READ' || document.state === 'NEEDS_REVIEW')));
   const title = job.status === 'QUEUED'
     ? 'Zadanie czeka w kolejce'
     : job.status === 'RUNNING' || job.status === 'MERGING'
@@ -465,7 +466,7 @@ function GenerationStatus({ job, result, onRetry }: { job: DocumentationJob; res
         ? 'Odczyt oczekuje na ponowienie'
         : job.status === 'DONE'
           ? result ? 'Wynik jest dostępny do sprawdzenia' : 'Zadanie zakończone, ale wynik jest niedostępny'
-          : failed ? 'Nie udało się odczytać dokumentów' : 'Status przygotowania nieustalony';
+          : failedMerging ? 'Pliki odczytano. Nie udało się połączyć wyników' : failed ? 'Nie udało się odczytać dokumentów' : 'Status przygotowania nieustalony';
   return (
     <section className={cn('rounded-2xl border p-4', failed ? 'border-destructive/25 bg-destructive/10' : 'border-primary/25 bg-primary/10')} aria-live="polite" data-testid="documentation-generation-status">
       <div className="flex items-start gap-3">
@@ -474,7 +475,7 @@ function GenerationStatus({ job, result, onRetry }: { job: DocumentationJob; res
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold">{title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{active ? 'Możesz zamknąć to okno. Przygotowanie trwa w tle.' : failed ? 'Zachowaliśmy odczytane dane. Spróbuj ponownie.' : 'Sprawdź materiały przed zapisaniem listy.'}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{active ? 'Możesz zamknąć to okno. Przygotowanie trwa w tle.' : failedMerging ? 'Odczyty plików są zachowane. Lista materiałów nie została zmieniona.' : failed ? 'Zachowaliśmy odczytane dane. Spróbuj ponownie.' : 'Sprawdź materiały przed zapisaniem listy.'}</p>
           {failed && onRetry && <Button icon={RefreshCw} onClick={onRetry} testId="button-retry-documentation" className="mt-3">Ponów odczyt</Button>}
         </div>
       </div>

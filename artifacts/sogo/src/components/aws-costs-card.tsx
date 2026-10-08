@@ -109,6 +109,8 @@ export function AwsCostsCard({
         </>
       ) : loading ? (
         <p className="mt-3 text-[10px] text-sidebar-foreground/60" role="status">Wczytywanie kosztów…</p>
+      ) : !enabled && !query.data && !query.isError ? (
+        <p className="mt-3 text-[10px] text-sidebar-foreground/60" role="status">Otwórz menu, aby wczytać dane</p>
       ) : view.unavailable ? (
         <p className="mt-3 text-[10px] leading-4 text-sidebar-foreground/70" role="status">Koszty chwilowo niedostępne</p>
       ) : (

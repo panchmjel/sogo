@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  selectDocumentationJob,
   formatDocumentationQuantity,
   getUnreadProjectDocumentationFiles,
   isProjectDocumentationJobActive,
@@ -52,4 +53,14 @@ test('lists only actually failed or review-needed files and de-duplicates them',
   );
 
   assert.deepEqual(unread.map((document) => document.filename), ['plan.pdf', 'detail.pdf']);
+});
+
+test('explicit result links override stale local jobs without carrying their apply state', () => {
+  const old = { jobId: 'old', applied: true };
+  const fromLink = (jobId: string) => ({ jobId, applied: false });
+  assert.deepEqual(selectDocumentationJob('new', old, fromLink), { jobId: 'new', applied: false });
+  assert.equal(selectDocumentationJob('old', old, fromLink), old);
+  assert.equal(selectDocumentationJob(null, old, fromLink), old);
+  assert.deepEqual(selectDocumentationJob('new', null, fromLink), { jobId: 'new', applied: false });
+  assert.equal(selectDocumentationJob(null, null, fromLink), null);
 });
