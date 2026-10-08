@@ -911,12 +911,6 @@ function ProjectHeader({ projectId, areaName }: { projectId: string; areaName?: 
         >
           {options.map((area) => <option key={area.purchaseAreaId ?? 'general'} value={area.purchaseAreaId ?? ''}>{area.name}</option>)}
         </select>
-        {isWorkspaceRoute && (
-          <nav className="flex shrink-0 items-center gap-1" aria-label="Skróty projektu">
-            <button type="button" onClick={() => setLocation(`${projectAreaPath(projectId, purchaseAreaId, 'scope')}?workspace=files`)} aria-label="Pliki" title="Pliki" aria-pressed={workspaceTab === 'files'} className={`grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground hover:bg-secondary hover:text-foreground ${workspaceTab === 'files' ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-border'}`} data-testid="button-project-files"><Files size={15} /></button>
-            <button type="button" onClick={() => setLocation(`${projectAreaPath(projectId, purchaseAreaId, 'scope')}?workspace=comparisons`)} aria-label="Wyniki" title="Wyniki" aria-pressed={workspaceTab === 'comparisons'} className={`grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground hover:bg-secondary hover:text-foreground ${workspaceTab === 'comparisons' ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-border'}`} data-testid="button-project-results"><GitCompareArrows size={15} /></button>
-          </nav>
-        )}
         <button
           type="button"
           onClick={() => {

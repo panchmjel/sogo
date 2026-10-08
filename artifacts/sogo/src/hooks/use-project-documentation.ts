@@ -288,19 +288,19 @@ export function useProjectDocumentation({
       const restored = saved ? parseStoredDocumentationJob(saved) : null;
       const queryJobId = new URLSearchParams(window.location.search).get('documentationJobId');
       const selected = selectDocumentationJob<StoredDocumentationJob>(queryJobId, restored, (jobId) => ({
-          request: {
-            requestId: crypto.randomUUID(),
-            name: scopeRef.current?.name ?? areaName,
-            description: '',
-            purchaseRules: [],
-            documentIds: [],
-            expectedVersion: scopeRef.current?.version ?? 0,
-            mode: 'append' as const,
-            applyAutomatically: false,
-          },
-          jobId,
-          appliedByUser: false,
-        }));
+        request: {
+          requestId: crypto.randomUUID(),
+          name: scopeRef.current?.name ?? areaName,
+          description: '',
+          purchaseRules: [],
+          documentIds: [],
+          expectedVersion: scopeRef.current?.version ?? 0,
+          mode: 'append' as const,
+          applyAutomatically: false,
+        },
+        jobId,
+        appliedByUser: false,
+      }));
       if (saved && !restored && !queryJobId) {
         setError('Nie udało się odczytać zapisanego zadania. Nie usunęliśmy jego danych; zamknij panel i sprawdź pamięć przeglądarki.');
       }
@@ -314,6 +314,7 @@ export function useProjectDocumentation({
         setSelectedDocumentIds(selected.request.documentIds.slice(0, 12));
       }
       setUrlJobId(queryJobId);
+
     } catch {
       setError('Nie udało się odczytać lokalnego stanu zadania. Odśwież stronę albo sprawdź ustawienia pamięci przeglądarki.');
     } finally {

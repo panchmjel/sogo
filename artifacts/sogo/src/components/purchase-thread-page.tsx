@@ -42,7 +42,6 @@ import { DocumentUploadDialog } from '@/components/document-upload-dialog';
 import { ProjectDocumentationWorkspaceFlow } from '@/components/comparison-scope-page';
 import {
   canAttachToConversation,
-  canPrepareMaterials,
   documentTypeLabel,
   documentTypeOf,
   isOfferResultDocument,
@@ -805,8 +804,6 @@ function OfferComparisonAction({ api, selectedIds, setSelectedIds }: { api: Thre
 function FilesPanel({
   api,
   onUploadFiles,
-  onPrepareDocument,
-  onShowComparisons,
 }: {
   api: ThreadApi;
   onUploadFiles: (files: File[]) => void;
@@ -818,7 +815,7 @@ function FilesPanel({
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-3 py-3 sm:px-4">
-        <p className="min-w-0 text-xs font-semibold">Dokumenty tego tematu</p>
+        <p className="min-w-0 text-xs font-semibold">Pliki</p>
         <div className="flex shrink-0 items-center gap-2">
           <input ref={fileInputRef} type="file" multiple accept=".pdf,.xlsx,.png,.jpg,.jpeg" className="sr-only" onChange={(event) => {
             if (event.currentTarget.files?.length) onUploadFiles(Array.from(event.currentTarget.files));
@@ -832,6 +829,7 @@ function FilesPanel({
           </button>
         </div>
       </div>
+      <p className="px-4 py-3 text-xs leading-5 text-muted-foreground">Tutaj przechowujesz dokumenty. Wróć do rozmowy i napisz, co chcesz z nich uzyskać. Kliknij nazwę pliku, aby zobaczyć szczegóły.</p>
       <div className="min-h-0 w-full min-w-0 flex-1 overflow-y-auto p-3 sm:p-4">
         {api.documentsLoading ? <LoadingRows label="Wczytywanie plików" /> : api.documentsError ? (
           <div className="rounded-lg border border-destructive/20 bg-destructive/[0.04] p-3 text-xs" role="alert">
@@ -854,26 +852,11 @@ function FilesPanel({
                       <DocumentTypeSelect projectId={api.projectId} purchaseAreaId={api.purchaseAreaId} document={document} />
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {type === 'PROJECT_DOCUMENTATION' && canPrepareMaterials(document) && (
-                      <button type="button" onClick={() => onPrepareDocument(document.documentId)} className="min-h-9 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 text-[10px] font-bold text-foreground hover:bg-primary/10">
-                        Przygotuj listę materiałów
-                      </button>
-                    )}
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {type === 'CORRESPONDENCE' && canAttachToConversation(document) && (
                       <button type="button" onClick={() => api.addExistingDocument(document)} disabled={alreadyAttached || api.attachments.length >= api.maxAttachments} className="min-h-9 rounded-lg border border-border px-3 text-[10px] font-bold hover:bg-secondary disabled:opacity-50">
                         {alreadyAttached ? 'Dodano do szkicu' : 'Dodaj do rozmowy'}
                       </button>
-                    )}
-                    {type === 'OFFER' && isOfferResultDocument(document) && (
-                      <button type="button" onClick={() => onShowComparisons(document.documentId)} className="min-h-9 rounded-lg border border-border px-3 text-[10px] font-bold hover:bg-secondary">
-                        Wybierz do porównania
-                      </button>
-                    )}
-                    {type === 'OFFER' && !isOfferResultDocument(document) && (
-                      <Link href={projectAreaPath(api.projectId, api.purchaseAreaId, `documents/${encodeURIComponent(document.documentId)}`)} className="min-h-9 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2 text-[10px] font-bold hover:bg-primary/10">
-                        Odczytaj ofertę / sprawdź postęp
-                      </Link>
                     )}
                     {type === 'INVOICE' && (
                       <span className="rounded-lg bg-secondary/60 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
@@ -881,7 +864,7 @@ function FilesPanel({
                       </span>
                     )}
                     {type === 'UNKNOWN' && (
-                      <span className="text-[10px] leading-4 text-muted-foreground">Wybierz rodzaj, aby pokazać dostępne działania.</span>
+                      <span className="text-[10px] leading-4 text-muted-foreground">Nie rozpoznano rodzaju. Wybierz go przed analizą.</span>
                     )}
                     {type === 'CORRESPONDENCE' && (
                       <span className="text-[10px] leading-4 text-muted-foreground">Korespondencja może też uzupełnić przygotowanie listy materiałów.</span>
@@ -935,23 +918,17 @@ function WorkspaceDataPanel({
   const tabs: Array<{ id: WorkspaceTab; label: string }> = [
     { id: 'materials', label: 'Materiały' },
     { id: 'comparisons', label: 'Porównania' },
-    { id: 'files', label: 'Pliki' },
   ];
   return (
     <section className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden border-y border-border bg-card/80 lg:rounded-xl lg:border" aria-label="Materiały, porównania i pliki">
       <div className="shrink-0 border-b border-border/70">
-        <div className="flex h-11 items-center px-3 lg:hidden">
-          <button type="button" onClick={onReturnToConversation} className="inline-flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">
-            <ArrowLeft size={14} /> Wróć do rozmowy
-          </button>
-        </div>
-        <nav className="grid w-full min-w-0 grid-cols-3" aria-label="Panel danych">
+        {tab !== 'files' && <nav className="grid w-full min-w-0 grid-cols-2" aria-label="Rodzaj wyniku">
           {tabs.map((item) => (
             <button key={item.id} type="button" aria-pressed={tab === item.id} onClick={() => onTabChange(item.id)} className={`min-h-11 border-b-2 px-2 text-xs font-bold ${tab === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`} data-testid={`tab-workspace-${item.id}`}>
               {item.label}
             </button>
           ))}
-        </nav>
+        </nav>}
       </div>
       <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">
         {tab === 'materials' ? (
@@ -1140,7 +1117,7 @@ export function PurchaseThreadPage({ projectId }: Props) {
   const api = usePurchaseThread(projectId);
   const search = useSearch();
   const initialWorkspace = new URLSearchParams(search).get('workspace');
-  const [mobileView, setMobileView] = useState<'conversation' | 'data'>(initialWorkspace === 'files' || initialWorkspace === 'comparisons' ? 'data' : 'conversation');
+  const [mobileView, setMobileView] = useState<'conversation' | 'data'>(initialWorkspace === 'files' || initialWorkspace === 'comparisons' || initialWorkspace === 'materials' ? 'data' : 'conversation');
   const [panelTab, setPanelTab] = useState<WorkspaceTab>(initialWorkspace === 'files' ? 'files' : initialWorkspace === 'comparisons' ? 'comparisons' : 'materials');
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [showNewResponse, setShowNewResponse] = useState(false);
@@ -1233,14 +1210,15 @@ export function PurchaseThreadPage({ projectId }: Props) {
 
   return (
     <main className="flex h-full min-h-0 w-full flex-col">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 lg:hidden">
-        <span className="text-xs font-bold">{mobileView === 'conversation' ? 'Rozmowa' : ''}</span>
-        {mobileView === 'conversation' && (
-          <button type="button" onClick={() => setMobileView('data')} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-[11px] font-bold hover:bg-secondary">
-            Materiały · Porównania · Pliki
-          </button>
-        )}
-      </div>
+      <nav className="grid h-12 shrink-0 grid-cols-3 border-b border-border bg-card" aria-label="Praca z projektem">
+        {(['conversation', 'files', 'results'] as const).map((view) => {
+          const active = mobileView === 'conversation' ? view === 'conversation' : view === (panelTab === 'files' ? 'files' : 'results');
+          return <button key={view} type="button" aria-pressed={active} className={`text-sm font-semibold ${active ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:bg-secondary'}`} onClick={() => {
+            if (view === 'conversation') setMobileView('conversation');
+            else { setPanelTab(view === 'files' ? 'files' : panelTab === 'comparisons' ? 'comparisons' : 'materials'); setMobileView('data'); }
+          }}>{view === 'conversation' ? 'Rozmowa' : view === 'files' ? 'Pliki' : 'Wyniki'}</button>;
+        })}
+      </nav>
       <div className="grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-3 lg:p-3">
         <section className={`min-h-0 w-full min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden bg-card/80 lg:rounded-xl lg:border lg:border-border ${mobileView === 'conversation' ? 'grid' : 'hidden lg:grid'}`} aria-label="Rozmowa">
           <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border/70 px-4">
@@ -1257,12 +1235,6 @@ export function PurchaseThreadPage({ projectId }: Props) {
                 api.setMessage(api.message ? `${api.message}\n\n${prompt}` : prompt);
               }} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/[0.06] px-2.5 text-[10px] font-bold text-foreground hover:bg-primary/10" data-testid="button-draft-material-proposal">
                 <Plus size={12} /> Proponuj listę
-              </button>
-              <button type="button" onClick={() => { setPanelTab('materials'); setMobileView('data'); }} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[10px] font-bold text-muted-foreground hover:bg-secondary hover:text-foreground" data-testid="button-open-saved-materials">
-                <FileText size={12} /> Lista zapisana
-              </button>
-              <button type="button" onClick={() => { setPanelTab('comparisons'); setMobileView('data'); }} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[10px] font-bold text-muted-foreground hover:bg-secondary hover:text-foreground" data-testid="button-open-offer-comparison">
-                <GitCompareArrows size={12} /> Porównaj oferty
               </button>
             </div>
             {api.documents.some((document) => documentTypeOf(document) === 'UNKNOWN') && (
@@ -1350,6 +1322,10 @@ export function PurchaseThreadPage({ projectId }: Props) {
         attachCorrespondenceToConversation={uploadDialog?.source === 'conversation'}
         onClose={() => setUploadDialog(null)}
         onCorrespondenceClassified={(document) => api.addExistingDocument(document)}
+        onCompleted={() => {
+          setMobileView('conversation');
+          requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#purchase-thread-message')?.focus());
+        }}
       />
       <ProjectDocumentationWorkspaceFlow
         projectId={api.projectId}

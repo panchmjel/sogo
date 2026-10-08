@@ -57,6 +57,7 @@ export function DocumentUploadDialog({
   onClose,
   onDocumentAvailable,
   onCorrespondenceClassified,
+  onCompleted,
 }: {
   open: boolean;
   files: File[];
@@ -64,6 +65,7 @@ export function DocumentUploadDialog({
   purchaseAreaId: string | null;
   attachCorrespondenceToConversation?: boolean;
   onClose: () => void;
+  onCompleted?: () => void;
   onDocumentAvailable?: (document: SogoDocument) => void | Promise<void>;
   onCorrespondenceClassified?: (document: SogoDocument) => void | Promise<void>;
 }) {
@@ -204,6 +206,7 @@ export function DocumentUploadDialog({
       if (keepOpen) return;
     }
     onClose();
+    if (entries.length > 0 && entries.every((entry) => entry.state === 'DONE')) onCompleted?.();
   }
 
   if (!open) return null;
@@ -214,9 +217,9 @@ export function DocumentUploadDialog({
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">DOKUMENTY PROJEKTU</p>
-            <h2 id="document-upload-title" className="mt-1 text-xl font-bold">Sprawdź rodzaj każdego pliku</h2>
+            <h2 id="document-upload-title" className="mt-1 text-xl font-bold">Dodaj pliki</h2>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              Podpowiedzi pochodzą wyłącznie z nazw plików. Rodzaj zapisze się dopiero po potwierdzeniu.
+              Sprawdź proponowane rodzaje i wgraj wszystkie pliki jednym kliknięciem. Podpowiedzi pochodzą z nazw plików.
               {attachCorrespondenceToConversation && ' Tylko korespondencja zostanie dodana do szkicu wiadomości.'}
             </p>
           </div>
@@ -261,7 +264,7 @@ export function DocumentUploadDialog({
                         <p className="mt-0.5 text-[10px] text-muted-foreground">{sizeLabel(entry.file.size)}</p>
                       </div>
                       <span className={`shrink-0 text-[10px] font-semibold ${entry.state === 'DONE' ? 'text-accent' : entry.state.includes('ERROR') ? 'text-destructive' : 'text-muted-foreground'}`}>
-                        {entry.state === 'READY' ? 'Do potwierdzenia' : entry.state === 'UPLOADING' ? 'Wgrywanie…' : entry.state === 'SAVING_TYPE' ? 'Zapisywanie rodzaju…' : entry.state === 'DONE' ? 'Zapisano' : 'Błąd — do ponowienia'}
+                        {entry.state === 'READY' ? 'Gotowy do wgrania' : entry.state === 'UPLOADING' ? 'Wgrywanie…' : entry.state === 'SAVING_TYPE' ? 'Zapisywanie rodzaju…' : entry.state === 'DONE' ? 'Zapisano' : 'Błąd — do ponowienia'}
                       </span>
                     </div>
                     <label className="mt-2 block">
@@ -294,7 +297,7 @@ export function DocumentUploadDialog({
           })}
         </ul>
 
-        {omittedNames.length > 0 && (
+        {attachCorrespondenceToConversation && omittedNames.length > 0 && (
           <p className="mt-3 rounded-lg bg-secondary/60 p-3 text-xs leading-5 text-muted-foreground" role="status">
             Pliki typu innego niż korespondencja pozostaną w bibliotece; nie zostaną wysłane jako załączniki wiadomości.
           </p>
@@ -303,14 +306,14 @@ export function DocumentUploadDialog({
 
         <footer className="mt-5 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[10px] leading-4 text-muted-foreground">
-            Wymagają potwierdzenia: {pendingEntries.length}
-            {omittedNames.length > 0 ? ` · poza rozmową: ${omittedNames.length}` : ''}
+            Pozostało do zapisania: {pendingEntries.length}
+
           </p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => void close()} disabled={isProcessing} className="inline-flex h-10 items-center rounded-lg px-3 text-xs font-bold text-muted-foreground hover:bg-secondary disabled:opacity-50">Zamknij</button>
+            <button type="button" onClick={() => void close()} disabled={isProcessing} className="inline-flex h-10 items-center rounded-lg px-3 text-xs font-bold text-muted-foreground hover:bg-secondary disabled:opacity-50">{pendingEntries.length === 0 ? 'Gotowe' : 'Zamknij'}</button>
             <button type="button" onClick={() => void processChecked()} disabled={isProcessing || checkedPending.length === 0} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground disabled:opacity-50">
               {isProcessing ? <LoaderCircle size={14} className="animate-spin" /> : <UploadCloud size={14} />}
-              {isProcessing ? 'Zapisywanie…' : hasFailures ? 'Ponów wybrane' : 'Wgraj i zapisz rodzaje'}
+              {isProcessing ? 'Zapisywanie…' : hasFailures ? 'Ponów wybrane' : 'Wgraj pliki'}
             </button>
           </div>
         </footer>

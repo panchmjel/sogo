@@ -70,13 +70,13 @@ export function DocumentTypeSelect({
       );
       const documentKeys = [
         withPurchaseAreaQueryKey(['documents', projectId], purchaseAreaId),
-        withPurchaseAreaQueryKey(['comparison-history-documents', projectId], purchaseAreaId),
         ['project-document-library', projectId],
       ];
       for (const queryKey of documentKeys) {
-        queryClient.setQueryData<SogoDocument[]>(queryKey, (current) => current?.map((entry) =>
-          entry.documentId === savedDocument.documentId ? savedDocument : entry,
-        ));
+        queryClient.setQueryData<SogoDocument[]>(queryKey, (current) => Array.isArray(current)
+          ? current.map((entry) => entry.documentId === savedDocument.documentId ? savedDocument : entry)
+          : current,
+        );
       }
       setPendingType(null);
       try {
