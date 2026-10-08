@@ -926,6 +926,11 @@
   }
 }
 
+.sogo-project-viewport {
+  height: 100vh;
+  height: 100dvh;
+}
+
 .sogo-grid {
   background-image: linear-gradient(hsl(var(--foreground) / 0.045) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground) / 0.045) 1px, transparent 1px);
   background-size: 28px 28px;

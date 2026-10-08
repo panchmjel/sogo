@@ -77,6 +77,12 @@ export type SogoDocument = {
   status: 'UPLOAD_PENDING' | 'UPLOADED' | string;
   analysisStatus?: AnalysisStatus | null;
   analysisError?: string | null;
+  documentType?: 'UNKNOWN' | 'OFFER' | 'PROJECT_DOCUMENTATION' | 'CORRESPONDENCE' | 'INVOICE' | string | null;
+  documentTypeVersion?: number;
+  suggestedDocumentType?: 'UNKNOWN' | 'OFFER' | 'PROJECT_DOCUMENTATION' | 'CORRESPONDENCE' | 'INVOICE' | string | null;
+  canAnalyzeOffer?: boolean;
+  canPrepareMaterials?: boolean;
+  offerResultApplicable?: boolean;
   createdAt: string;
   uploadedAt?: string;
 };
@@ -1031,6 +1037,128 @@ export type ComparisonScopeResponse = {
   scope: ComparisonScope | null;
 };
 
+export type PurchaseThreadStatus = 'QUEUED' | 'RUNNING' | 'RETRY_WAIT' | 'DONE' | 'FAILED' | string;
+
+export type PurchaseThreadStage =
+  | 'QUEUED'
+  | 'READING_DOCUMENTS'
+  | 'THINKING'
+  | 'PREPARING_RESULT'
+  | 'DONE'
+  | 'FAILED'
+  | string;
+
+export type PurchaseThreadSource = {
+  sourceId: string;
+  category?: string | null;
+  type?: string | null;
+  text?: string | null;
+  data?: unknown;
+  documentationJobId?: string | null;
+  [key: string]: unknown;
+};
+
+export type PurchaseThreadFinding = {
+  findingId: string;
+  [key: string]: unknown;
+};
+
+export type PurchaseThreadScopeItemSnapshot = {
+  itemId: string;
+  name: string;
+  quantity: string | null;
+  unit: string | null;
+};
+
+export type PurchaseThreadScopeChange = {
+  itemId: string;
+  before: PurchaseThreadScopeItemSnapshot | null;
+  after: PurchaseThreadScopeItemSnapshot | null;
+  reason: string;
+  sources: PurchaseThreadSource[];
+};
+
+export type PurchaseThreadAnswer = {
+  type: 'ANSWER';
+  text: string;
+  changes: unknown[];
+  expectedScopeVersion: number;
+  findings: PurchaseThreadFinding[];
+  usage?: unknown;
+  createdAt?: string;
+};
+
+export type PurchaseThreadScopeProposal = {
+  type: 'SCOPE_PROPOSAL';
+  text: string;
+  proposalId: string;
+  proposalStatus: 'PROPOSED' | 'APPLIED' | string;
+  expectedScopeVersion: number;
+  changes: PurchaseThreadScopeChange[];
+  rulesChange?: { before: string[]; after: string[] } | null;
+  findings: PurchaseThreadFinding[];
+  appliedVersion?: number | null;
+  createdAt?: string;
+};
+
+export type PurchaseThreadResult = PurchaseThreadAnswer | PurchaseThreadScopeProposal;
+
+export type PurchaseThread = {
+  threadId: string;
+  projectId: string;
+  purchaseAreaId?: string | null;
+  version: number;
+  createdAt: string;
+};
+
+export type PurchaseThreadTurn = {
+  jobId: string;
+  threadId: string;
+  sequence: number;
+  requestId?: string;
+  message: string;
+  attachmentIds: string[];
+  createdAt: string;
+  status: PurchaseThreadStatus;
+  stage: PurchaseThreadStage;
+  expectedScopeVersion: number;
+  result?: PurchaseThreadResult | null;
+  error?: string | { code?: string; message?: string; [key: string]: unknown } | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+};
+
+export type PurchaseThreadHistoryPage = {
+  threadId: string;
+  version: number;
+  turns: PurchaseThreadTurn[];
+  nextAfterSequence: number | null;
+};
+
+export type SendPurchaseTurnInput = {
+  projectId: string;
+  threadId: string;
+  requestId: string;
+  message: string;
+  attachmentIds: string[];
+  expectedScopeVersion: number;
+};
+
+export type ApplyPurchaseProposalInput = {
+  projectId: string;
+  threadId: string;
+  proposalId: string;
+  requestId: string;
+  expectedScopeVersion: number;
+};
+
+export type ApplyPurchaseProposalResponse = {
+  applied: boolean;
+  alreadyApplied: boolean;
+  appliedVersion: number | null;
+  scope: ComparisonScope | null;
+};
+
 type CursorResponse<T> = {
   items: T[];
   nextCursor?: string | null;
@@ -1193,6 +1321,10 @@ export function getApiUser() {
   return apiRequest<ApiUser>('me');
 }
 
+export function getAdminAwsCosts(signal?: AbortSignal) {
+  return apiRequest<unknown>('admin_aws_costs', {}, signal);
+}
+
 export function listAdminUsersPage(cursor?: string, signal?: AbortSignal) {
   return apiRequest<AdminUsersPage>(
     'admin_list_users',
@@ -1334,9 +1466,13 @@ async function sendToObjectStorage(
   }
 }
 
-export async function uploadDocument(projectId: string, file: File, purchaseAreaId?: string | null) {
+export async function uploadDocumentWithRequestId(
+  projectId: string,
+  file: File,
+  requestId: string,
+  purchaseAreaId?: string | null,
+) {
   assertUploadFile(file);
-  const requestId = crypto.randomUUID();
   let prepared = await prepareUpload(projectId, file.name, file.size, requestId, purchaseAreaId);
 
   if (!prepared.upload) {
@@ -1361,6 +1497,19 @@ export async function uploadDocument(projectId: string, file: File, purchaseArea
     projectId,
     documentId: prepared.document.documentId,
   }, purchaseAreaId));
+}
+
+export function uploadDocument(projectId: string, file: File, purchaseAreaId?: string | null) {
+  return uploadDocumentWithRequestId(projectId, file, crypto.randomUUID(), purchaseAreaId);
+}
+
+export function uploadPurchaseThreadAttachment(
+  projectId: string,
+  file: File,
+  requestId: string,
+  purchaseAreaId?: string | null,
+) {
+  return uploadDocumentWithRequestId(projectId, file, requestId, purchaseAreaId);
 }
 
 export async function uploadApoChatAttachment(
@@ -1403,6 +1552,37 @@ export function downloadDocument(projectId: string, documentId: string, purchase
     projectId,
     documentId,
   }, purchaseAreaId), signal);
+}
+
+export async function setDocumentType(
+  projectId: string,
+  documentId: string,
+  documentType: NonNullable<SogoDocument['documentType']>,
+  expectedDocumentTypeVersion: number,
+  purchaseAreaId?: string | null,
+) {
+  const response = await apiRequest<unknown>('set_document_type', withPurchaseArea({
+    projectId,
+    documentId,
+    documentType,
+    expectedDocumentTypeVersion,
+  }, purchaseAreaId));
+  if (
+    response === null
+    || typeof response !== 'object'
+    || !('document' in response)
+    || response.document === null
+    || typeof response.document !== 'object'
+    || !('documentId' in response.document)
+    || response.document.documentId !== documentId
+  ) {
+    throw new Error('Serwer nie potwierdził zapisanego rodzaju dokumentu.');
+  }
+  const document = response.document as SogoDocument;
+  if (document.documentType !== documentType) {
+    throw new Error('Serwer nie potwierdził zapisanego rodzaju dokumentu.');
+  }
+  return document;
 }
 
 export function analyzeDocument(projectId: string, documentId: string, purchaseAreaId?: string | null) {
@@ -1533,6 +1713,48 @@ export function compareOffers(
 
 export function getComparisonScope(projectId: string, purchaseAreaId?: string | null, signal?: AbortSignal) {
   return apiRequest<ComparisonScopeResponse>('get_scope', withPurchaseArea({ projectId }, purchaseAreaId), signal);
+}
+
+export function openPurchaseThread(projectId: string, purchaseAreaId?: string | null, signal?: AbortSignal) {
+  return apiRequest<{ thread: PurchaseThread }>(
+    'open_purchase_thread',
+    withPurchaseArea({ projectId }, purchaseAreaId),
+    signal,
+  );
+}
+
+export function getPurchaseThread(
+  projectId: string,
+  threadId: string,
+  afterSequence: number,
+  purchaseAreaId?: string | null,
+  signal?: AbortSignal,
+) {
+  return apiRequest<PurchaseThreadHistoryPage>(
+    'get_purchase_thread',
+    withPurchaseArea({ projectId, threadId, afterSequence }, purchaseAreaId),
+    signal,
+  );
+}
+
+export function sendPurchaseTurn(
+  purchaseAreaId: string | null | undefined,
+  input: SendPurchaseTurnInput,
+) {
+  return apiRequest<{ turn: PurchaseThreadTurn }>(
+    'send_purchase_turn',
+    withPurchaseArea(input, purchaseAreaId),
+  );
+}
+
+export function applyPurchaseProposal(
+  purchaseAreaId: string | null | undefined,
+  input: ApplyPurchaseProposalInput,
+) {
+  return apiRequest<ApplyPurchaseProposalResponse>(
+    'apply_purchase_proposal',
+    withPurchaseArea(input, purchaseAreaId),
+  );
 }
 
 export function getComparisonReview(projectId: string, jobId: string, version?: number | null, purchaseAreaId?: string | null, signal?: AbortSignal) {

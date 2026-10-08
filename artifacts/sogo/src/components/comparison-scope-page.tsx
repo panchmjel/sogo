@@ -24,6 +24,8 @@ import { projectAreaPath, registerPurchaseAreaDirtyGuard, useProjectArea, withPu
 import { getPurchaseArea } from '@/lib/purchase-areas-api';
 import { useApiSession } from '@/lib/app-session';
 import { useProjectDocumentation } from '@/hooks/use-project-documentation';
+import { canPrepareMaterials, isOfferResultDocument, documentTypeLabel, documentTypeOf } from '@/lib/document-types';
+import { DocumentUploadDialog } from './document-upload-dialog';
 import {
   comparisonScopeDraftStorageKey,
   readComparisonScopeDraftResult,
@@ -110,7 +112,7 @@ function quantityError(value: string) {
 }
 
 function isReadyOffer(document: SogoDocument) {
-  return document.analysisStatus === 'NEEDS_REVIEW';
+  return isOfferResultDocument(document);
 }
 
 function isDocumentAnalysisActive(document: SogoDocument) {
@@ -118,6 +120,9 @@ function isDocumentAnalysisActive(document: SogoDocument) {
 }
 
 function documentReadinessLabel(document: SogoDocument) {
+  if (documentTypeOf(document) !== 'OFFER') {
+    return `${documentTypeLabel(documentTypeOf(document))} — nie jest ofertą do importu`;
+  }
   if (document.analysisStatus === 'QUEUED') return 'Odczyt w kolejce';
   if (document.analysisStatus === 'OCR') return 'Odczytywanie PDF';
   if (document.analysisStatus === 'ANALYZING') return 'Analizowanie oferty';
@@ -199,7 +204,7 @@ function toWorkspaceReferences(references?: ApiDocumentationSourceReference[]) {
   }));
 }
 
-function toDocumentationUiResult(result: ProjectDocumentationResult | null): DocumentationResult | null {
+export function toDocumentationUiResult(result: ProjectDocumentationResult | null): DocumentationResult | null {
   if (!result) return null;
   return {
     name: result.name,
@@ -247,6 +252,220 @@ function toDocumentationUiResult(result: ProjectDocumentationResult | null): Doc
     mergeNeedsReview: result.mergeNeedsReview,
     requiresReview: result.requiresReview,
   };
+}
+
+export function ProjectDocumentationWorkspaceFlow({
+  projectId,
+  purchaseAreaId,
+  areaKey,
+  scope,
+  scopeDocuments,
+  open,
+  preselectedDocumentIds = [],
+  onClose,
+}: {
+  projectId: string;
+  purchaseAreaId: string | null;
+  areaKey: string;
+  scope: ApiComparisonScope | null;
+  scopeDocuments: SogoDocument[];
+  open: boolean;
+  preselectedDocumentIds?: string[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { authUserId } = useApiSession();
+  const [uploadFiles, setUploadFiles] = useState<File[] | null>(null);
+  const [sourceDocumentError, setSourceDocumentError] = useState('');
+  const preselectedKey = preselectedDocumentIds.join('|');
+  const previousOpen = useRef(false);
+  const eligibleScopeDocuments = useMemo(
+    () => scopeDocuments.filter(canPrepareMaterials),
+    [scopeDocuments],
+  );
+  const scopeQueryKey = useMemo(
+    () => withPurchaseAreaQueryKey(['comparison-scope', projectId], purchaseAreaId),
+    [projectId, purchaseAreaId],
+  );
+
+  const adoptScope = useCallback((nextScope: ApiComparisonScope) => {
+    queryClient.setQueryData<{ scope: ApiComparisonScope }>(scopeQueryKey, (current) => ({
+      ...(current ?? {}),
+      scope: nextScope,
+    }));
+  }, [queryClient, scopeQueryKey]);
+
+  const prepareDocumentationScope = useCallback(async (name: string, purchaseRules: string[]) => {
+    const draftStorage = readComparisonScopeDraftResult(
+      comparisonScopeDraftStorageKey(authUserId, projectId, purchaseAreaId, areaKey),
+    );
+    if (draftStorage.status === 'valid') {
+      throw new Error('Zapisany szkic listy materiałów wymaga rozstrzygnięcia. Otwórz kartę Materiały, aby zapisać albo jawnie odrzucić szkic.');
+    }
+    if (draftStorage.status === 'invalid' || draftStorage.status === 'unavailable') {
+      throw new Error('Nie udało się bezpiecznie sprawdzić lokalnego szkicu listy materiałów. Otwórz kartę Materiały i rozstrzygnij jego stan przed kontynuacją.');
+    }
+    const latestResponse = await getComparisonScope(projectId, purchaseAreaId);
+    queryClient.setQueryData(scopeQueryKey, latestResponse);
+    let latest = latestResponse.scope;
+    if (!latest) {
+      if (scope) {
+        throw new Error('Zapisana lista materiałów nie jest już dostępna. Odśwież kartę Materiały przed ponowieniem.');
+      }
+      const created = await createComparisonScope(
+        projectId,
+        name,
+        undefined,
+        crypto.randomUUID(),
+        purchaseAreaId,
+        purchaseRules,
+      );
+      if (!created.scope) throw new Error('Serwer nie zwrócił utworzonej listy materiałów.');
+      queryClient.setQueryData(scopeQueryKey, created);
+      adoptScope(created.scope);
+      return created.scope;
+    }
+
+    if (!scope || latest.version !== scope.version) {
+      adoptScope(latest);
+      throw new Error('Lista materiałów zmieniła się od jej otwarcia. Pobraliśmy aktualną wersję; sprawdź ją i ponów przygotowanie.');
+    }
+
+    const currentRules = latest.purchaseRules ?? [];
+    const rulesChanged = currentRules.length !== purchaseRules.length
+      || currentRules.some((rule, index) => rule !== purchaseRules[index]);
+    if (latest.name === name && !rulesChanged) {
+      adoptScope(latest);
+      return latest;
+    }
+
+    const saved = await saveComparisonScope(
+      projectId,
+      latest.version,
+      name,
+      latest.items.map((item) => ({ ...item })),
+      crypto.randomUUID(),
+      purchaseAreaId,
+      {
+        technicalRequirements: latest.technicalRequirements ?? [],
+        documentationIssues: latest.documentationIssues ?? [],
+        purchaseRules,
+      },
+    );
+    latest = saved.scope ?? latest;
+    if (!saved.scope) throw new Error('Serwer nie zwrócił zapisanej listy materiałów.');
+    queryClient.setQueryData(scopeQueryKey, saved);
+    adoptScope(latest);
+    return latest;
+  }, [adoptScope, areaKey, authUserId, projectId, purchaseAreaId, queryClient, scope, scopeQueryKey]);
+
+  const documentation = useProjectDocumentation({
+    projectId,
+    purchaseAreaId,
+    areaKey,
+    areaName: scope?.name ?? (purchaseAreaId ? 'Lista materiałów' : 'Lista materiałów ogólna'),
+    authUserId,
+    scope,
+    scopeDocuments,
+    hasUnsavedChanges: false,
+    onScopeUpdated: adoptScope,
+    prepareScope: prepareDocumentationScope,
+  });
+
+  useEffect(() => {
+    if (open && !previousOpen.current) {
+      documentation.openPanel(preselectedDocumentIds);
+    } else if (!open && previousOpen.current) {
+      documentation.close();
+    }
+    previousOpen.current = open;
+  }, [documentation.close, documentation.openPanel, open, preselectedKey]);
+
+  const closePanel = useCallback(() => {
+    documentation.close();
+    setUploadFiles(null);
+    onClose();
+  }, [documentation.close, onClose]);
+
+  const openSourceDocument = useCallback(async (documentId: string) => {
+    setSourceDocumentError('');
+    const target = window.open('about:blank', '_blank');
+    if (!target) {
+      setSourceDocumentError('Przeglądarka zablokowała nowe okno. Zezwól na wyskakujące okna, aby otworzyć źródło.');
+      return;
+    }
+    target.opener = null;
+    try {
+      const response = await downloadDocument(projectId, documentId, purchaseAreaId);
+      if (!target.closed) target.location.replace(response.url);
+    } catch {
+      target.close();
+      setSourceDocumentError('Nie udało się otworzyć dokumentu źródłowego. Spróbuj ponownie.');
+    }
+  }, [projectId, purchaseAreaId]);
+
+  return (
+    <>
+      <ProjectDocumentationPanel
+        open={open && documentation.open}
+        onClose={closePanel}
+        scopeDocuments={eligibleScopeDocuments}
+        projectDocuments={documentation.projectDocuments}
+        selectedDocumentIds={documentation.selectedDocumentIds}
+        onToggleDocument={documentation.toggleDocument}
+        onRemoveDocument={documentation.removeDocument}
+        onFilesAdded={(files) => setUploadFiles(Array.from(files))}
+        onPasteContent={documentation.onPasteContent}
+        documentationName={documentation.documentationName}
+        preparationRequest={documentation.preparationRequest}
+        onPreparationRequestChange={documentation.setPreparationRequest}
+        mode={documentation.mode === 'replace' ? 'REPLACE' : 'APPEND'}
+        onModeChange={(mode) => documentation.setMode(mode === 'REPLACE' ? 'replace' : 'append')}
+        purchaseRules={documentation.purchaseRules}
+        onPurchaseRuleChange={documentation.onPurchaseRuleChange}
+        onAddPurchaseRule={documentation.onAddPurchaseRule}
+        onRemovePurchaseRule={documentation.onRemovePurchaseRule}
+        onPrepare={documentation.onPrepare}
+        canPrepare={documentation.canPrepare}
+        isPreparing={documentation.isPreparing}
+        isUploading={false}
+        job={documentation.job ? {
+          jobId: documentation.job.jobId,
+          status: documentation.job.status,
+          phase: documentation.job.phase,
+          activeStage: documentation.job.activeStage,
+          completedStages: documentation.job.completedStages,
+          totalStages: documentation.job.totalStages,
+          errorMessage: documentation.job.errorMessage ?? undefined,
+          message: documentation.job.message ?? undefined,
+          applied: documentation.job.applied,
+          documents: documentation.job.documents?.map((document) => ({
+            documentId: document.documentId,
+            filename: document.filename,
+            state: document.state,
+          })),
+        } : undefined}
+        result={toDocumentationUiResult(documentation.result)}
+        onApplyResult={documentation.onApplyResult}
+        canApply
+        isApplying={documentation.isApplying}
+        applyError={documentation.applyError}
+        onRetry={documentation.onRetry}
+        onClearResult={documentation.onClearResult}
+        onOpenDocument={openSourceDocument}
+        maxFiles={12}
+        scopeItemCount={documentation.scopeItemCount}
+        error={documentation.error || documentation.projectDocumentsError || sourceDocumentError || undefined}
+      />
+      <DocumentUploadDialog
+        open={Boolean(uploadFiles)}
+        files={uploadFiles ?? []}
+        projectId={projectId}
+        purchaseAreaId={purchaseAreaId}
+        onClose={() => setUploadFiles(null)}
+      />
+    </>
+  );
 }
 
 function ImportScopeOfferDialog({
@@ -456,60 +675,43 @@ function ScopeState({ title, detail, action }: { title: string; detail: string; 
 }
 
 function SetupScope({
-  projectId,
-  purchaseAreaId,
-  documents,
-  selectedDocumentId,
-  name,
   isCreating,
   draftWarning,
   draftBlocked,
   error,
   errorTitle,
   documentsError,
+  onRetryDocuments,
   onRetry,
   onOpenExisting,
-  onNameChange,
-  onDocumentChange,
   onCreate,
-  onCreateFromDocument,
   onDiscardDraft,
   onPrepareDocumentation,
 }: {
-  projectId: string;
-  purchaseAreaId: string | null;
-  documents: SogoDocument[];
-  selectedDocumentId: string;
-  name: string;
   isCreating: boolean;
   draftWarning?: string;
   draftBlocked?: boolean;
   error?: string;
   errorTitle?: string;
   documentsError?: string;
+  onRetryDocuments?: () => void;
   onRetry?: () => void;
   onOpenExisting?: () => void;
-  onNameChange: (value: string) => void;
-  onDocumentChange: (value: string) => void;
   onCreate: () => void;
-  onCreateFromDocument: () => void;
   onDiscardDraft?: () => void;
   onPrepareDocumentation: () => void;
 }) {
-  const available = documents.filter(isReadyOffer);
-  const notReadyDocuments = documents.filter((document) => !isReadyOffer(document));
   return (
     <div className="mx-auto max-w-[1100px] p-5 md:p-8 lg:p-10">
-      <div className="sogo-rise rounded-[22px] border border-border bg-card/85 p-6 shadow-sm sm:p-8 lg:p-10">
-        <div className="flex flex-col gap-5 border-b border-border pb-7 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent">03 / ZAKUP</p>
-           <h1 className="mt-2 font-display text-3xl font-bold tracking-[-0.045em] md:text-[40px]">Lista materiałów</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{SCOPE_DESCRIPTION}</p>
-          </div>
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/15 text-accent"><FilePlus2 size={22} /></div>
-        </div>
-        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+      <div className="sogo-rise overflow-hidden rounded-[22px] border border-border bg-card/90 shadow-sm">
+        <header className="border-b border-border p-6 sm:p-8 lg:p-9">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">DO KUPIENIA</p>
+          <h1 className="mt-2 font-display text-3xl font-bold tracking-[-0.045em] md:text-[36px]">Co chcesz kupić?</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Dodaj dokumentację i opisz, czego potrzebujesz. Przygotujemy listę materiałów i ilości do sprawdzenia.
+          </p>
+        </header>
+        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)] lg:gap-10 lg:p-9">
           {draftWarning && (
             <div className="lg:col-span-2 flex items-start gap-2 rounded-xl border border-primary/35 bg-primary/10 p-4 text-sm leading-6" role="alert">
               <AlertTriangle size={17} className="mt-1 shrink-0" />
@@ -520,59 +722,30 @@ function SetupScope({
               </div>
             </div>
           )}
-          <div>
-             <label htmlFor="new-scope-name" className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Nazwa listy materiałów</label>
-            <input id="new-scope-name" value={name} maxLength={160} onChange={(event) => onNameChange(event.target.value)} className="mt-2 h-12 w-full rounded-xl border border-input bg-background px-4 font-display text-lg font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-            <div className="mt-6 rounded-2xl border border-border bg-secondary/40 p-4">
-               <p className="text-sm font-bold">Utwórz pustą listę materiałów</p>
-               <p className="mt-1 text-xs leading-5 text-muted-foreground">Dodasz pozycje i ilości ręcznie po utworzeniu listy.</p>
-                <button type="button" onClick={onCreate} disabled={isCreating || draftBlocked || !name.trim()} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"><FilePlus2 size={16} /> Utwórz listę materiałów</button>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-border bg-background/60 p-4">
-             <p className="text-sm font-bold">Utwórz listę materiałów z odczytanej oferty</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">Backend skopiuje tylko materiały. Przed zapisaniem sprawdzisz każdą pozycję.</p>
-            {documentsError ? (
-              <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 p-4 text-xs leading-5 text-destructive">{documentsError}</div>
-            ) : available.length > 0 ? (
-              <>
-                <label htmlFor="scope-source-document" className="sr-only">Oferta źródłowa</label>
-                <select id="scope-source-document" value={selectedDocumentId} onChange={(event) => onDocumentChange(event.target.value)} className="mt-4 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
-                  <option value="">Wybierz ofertę PDF</option>
-                  {available.map((document) => <option key={document.documentId} value={document.documentId}>{document.filename}</option>)}
-                </select>
-                <button type="button" onClick={onCreateFromDocument} disabled={isCreating || draftBlocked || !name.trim() || !selectedDocumentId} className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"><UploadCloud size={16} /> Utwórz z oferty</button>
-              </>
-            ) : (
-              <div className="mt-4 rounded-xl border border-dashed border-border p-4 text-center text-xs leading-5 text-muted-foreground">
-                <p>
-                  {documents.length === 0
-                    ? 'Ta lista materiałów nie ma jeszcze przypisanych dokumentów.'
-                    : documents.some(isDocumentAnalysisActive)
-                      ? 'Odczyt przypisanych dokumentów trwa. Gotowe oferty pojawią się tutaj po zakończeniu odczytu.'
-                      : documents.some((document) => !document.analysisStatus)
-                        ? 'Przeanalizuj ofertę bez wyniku w Dokumentach, aby utworzyć listę materiałów z jej materiałów.'
-                        : 'W przypisanych plikach nie ma oferty gotowej do utworzenia listy materiałów.'}
+          <section className="rounded-2xl border border-accent/25 bg-accent/5 p-5 sm:p-6" aria-labelledby="prepare-scope-title">
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent"><FilePlus2 size={19} /></span>
+              <div>
+                <h2 id="prepare-scope-title" className="font-display text-lg font-bold">Z dokumentacji</h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Dołącz rysunki, specyfikacje, przedmiary lub kosztorysy. Opisz, co uwzględnić, np. „Sieć wodociągowa, bez przyłączy. Przy różnicach stosuj warunki techniczne”.
                 </p>
-                <Link href={projectAreaPath(projectId, purchaseAreaId, 'documents')} className="mt-3 inline-flex items-center gap-2 font-bold text-accent underline underline-offset-2">
-                  {purchaseAreaId ? <><Files size={14} /> Dodaj z biblioteki projektu</> : 'Przejdź do Dokumentów'}
-                </Link>
-                {notReadyDocuments.length > 0 && (
-                  <p className="mt-3 text-left">Dokumenty oczekujące: {notReadyDocuments.map((document) => `${document.filename} (${documentReadinessLabel(document)})`).join(', ')}</p>
-                )}
               </div>
-            )}
-          </div>
+            </div>
+            {documentsError && <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive" role="alert"><p>{documentsError}</p>{onRetryDocuments && <button type="button" onClick={onRetryDocuments} className="mt-2 min-h-11 font-bold underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">Ponów pobieranie dokumentów</button>}</div>}
+            <ProjectDocumentationTrigger onOpen={onPrepareDocumentation} className="mt-5" label="Utwórz listę zakupów" />
+          </section>
+          <section className="rounded-2xl border border-border bg-secondary/35 p-5 sm:p-6" aria-labelledby="manual-scope-title">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">ALTERNATYWNIE</p>
+            <h2 id="manual-scope-title" className="mt-2 font-display text-lg font-bold">Wpisz materiały ręcznie</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Utworzymy listę, do której samodzielnie dodasz materiały i ilości.</p>
+            <button type="button" onClick={onCreate} disabled={isCreating || draftBlocked} className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50">
+              <FilePlus2 size={16} /> {isCreating ? 'Tworzenie listy…' : 'Wpisz materiały ręcznie'}
+            </button>
+          </section>
         </div>
-        <div className="mt-8 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-start sm:justify-between">
-          <div className="max-w-xl">
-             <p className="text-sm font-bold">Przygotuj listę materiałów bez tworzenia pustej listy</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">Wybierz pliki projektu i sprawdź wynik przed dodaniem go do listy materiałów.</p>
-          </div>
-          <ProjectDocumentationTrigger onOpen={onPrepareDocumentation} />
-        </div>
-        {error && <div className="mt-5 flex flex-col gap-3 rounded-xl border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between" role="alert"><div><p className="font-bold">{errorTitle || 'Nie udało się wykonać operacji'}</p><p className="mt-1">{error}</p></div><div className="flex shrink-0 flex-wrap gap-3">{onOpenExisting && <button type="button" onClick={onOpenExisting} disabled={isCreating} className="font-bold underline disabled:opacity-50">Otwórz istniejącą listę materiałów</button>}{onRetry && <button type="button" onClick={onRetry} disabled={isCreating} className="font-bold underline disabled:opacity-50">Ponów to samo utworzenie</button>}</div></div>}
-        {isCreating && <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle size={14} className="animate-spin" /> Zapisywanie listy materiałów…</p>}
+        {error && <div className="mx-6 mb-6 flex flex-col gap-3 rounded-xl border border-destructive/25 bg-destructive/10 p-4 text-sm text-destructive sm:mx-8 sm:flex-row sm:items-center sm:justify-between lg:mx-9" role="alert"><div><p className="font-bold">{errorTitle || 'Nie udało się wykonać operacji'}</p><p className="mt-1">{error}</p></div><div className="flex shrink-0 flex-wrap gap-3">{onOpenExisting && <button type="button" onClick={onOpenExisting} disabled={isCreating} className="font-bold underline disabled:opacity-50">Otwórz istniejącą listę</button>}{onRetry && <button type="button" onClick={onRetry} disabled={isCreating} className="font-bold underline disabled:opacity-50">Ponów utworzenie</button>}</div></div>}
+        {isCreating && <p className="px-6 pb-6 text-xs text-muted-foreground sm:px-8 lg:px-9" role="status"><LoaderCircle size={14} className="mr-2 inline animate-spin" />Zapisywanie listy…</p>}
       </div>
     </div>
   );
@@ -612,7 +785,6 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
   const [draftRequirements, setDraftRequirements] = useState<DocumentationTechnicalRequirement[]>([]);
   const [draftIssues, setDraftIssues] = useState<DocumentationIssue[]>([]);
   const [draftBaseVersion, setDraftBaseVersion] = useState<number | null>(null);
-  const [setupName, setSetupName] = useState('Lista materiałów');
   const [createErrorDetails, setCreateErrorDetails] = useState<{ title: string; message: string } | null>(null);
   const [storageWarning, setStorageWarning] = useState('');
   const [orphanedDraft, setOrphanedDraft] = useState<PersistedComparisonScopeDraft | null>(null);
@@ -635,6 +807,7 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
   const [lastImportRequest, setLastImportRequest] = useState<ImportRequest | null>(null);
   const [openImportAfterSave, setOpenImportAfterSave] = useState(false);
   const [sourceDocumentError, setSourceDocumentError] = useState('');
+  const [documentationUploadFiles, setDocumentationUploadFiles] = useState<File[] | null>(null);
   const initializedScopeContextRef = useRef<string | null>(null);
   const restoredDraftContextRef = useRef<string | null>(null);
   const draftRequirementsRef = useRef(draftRequirements);
@@ -954,7 +1127,10 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
     setSaveError('');
     setSaveErrorTitle('');
     setCreateErrorDetails(null);
-    const request = { name: setupName.trim(), ...(documentId ? { documentId } : {}), requestId: crypto.randomUUID() };
+    const defaultScopeName = purchaseAreaId && purchaseAreaQuery.data?.area.name
+      ? purchaseAreaQuery.data.area.name
+      : 'Lista zakupów';
+    const request = { name: defaultScopeName, ...(documentId ? { documentId } : {}), requestId: crypto.randomUUID() };
     setLastCreateRequest(request);
     createMutation.mutate(request);
   };
@@ -1138,10 +1314,9 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
       selectedDocumentIds={documentation.selectedDocumentIds}
       onToggleDocument={documentation.toggleDocument}
       onRemoveDocument={documentation.removeDocument}
-      onFilesAdded={documentation.addFiles}
+      onFilesAdded={(files) => setDocumentationUploadFiles(Array.from(files))}
       onPasteContent={documentation.onPasteContent}
       documentationName={documentation.documentationName}
-      onDocumentationNameChange={documentation.setDocumentationName}
       preparationRequest={documentation.preparationRequest}
       onPreparationRequestChange={documentation.setPreparationRequest}
       mode={documentation.mode === 'replace' ? 'REPLACE' : 'APPEND'}
@@ -1153,7 +1328,7 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
       onPrepare={documentation.onPrepare}
       canPrepare={documentation.canPrepare}
       isPreparing={documentation.isPreparing}
-      isUploading={documentation.isUploading}
+      isUploading={false}
       job={documentation.job
         ? {
           jobId: documentation.job.jobId,
@@ -1216,7 +1391,7 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
       : storageWarning || undefined;
     return (
       <>
-        <SetupScope projectId={projectId} purchaseAreaId={purchaseAreaId} documents={documents} draftWarning={draftWarning} draftBlocked={Boolean(orphanedDraft)} onDiscardDraft={orphanedDraft ? discardOrphanedDraft : undefined} documentsError={documentsQuery.isError ? scopeErrorMessage(documentsQuery.error, 'Nie udało się pobrać ofert do importu.') : undefined} selectedDocumentId={selectedDocumentId} name={setupName} isCreating={createMutation.isPending} error={createErrorDetails?.message} errorTitle={createErrorDetails?.title} onOpenExisting={createErrorDetails?.title === 'Lista materiałów już istnieje' ? openExistingScope : undefined} onRetry={lastCreateRequest ? () => { setCreateErrorDetails(null); createMutation.mutate(lastCreateRequest); } : undefined} onNameChange={setSetupName} onDocumentChange={setSelectedDocumentId} onCreate={() => createScope()} onCreateFromDocument={() => createScope(selectedDocumentId)} onPrepareDocumentation={documentation.openPanel} />
+        <SetupScope draftWarning={draftWarning} draftBlocked={Boolean(orphanedDraft)} onDiscardDraft={orphanedDraft ? discardOrphanedDraft : undefined} documentsError={documentsQuery.isError ? scopeErrorMessage(documentsQuery.error, 'Nie udało się pobrać listy dokumentów.') : undefined} onRetryDocuments={() => void documentsQuery.refetch()} isCreating={createMutation.isPending} error={createErrorDetails?.message} errorTitle={createErrorDetails?.title} onOpenExisting={createErrorDetails?.title === 'Lista materiałów już istnieje' ? openExistingScope : undefined} onRetry={lastCreateRequest ? () => { setCreateErrorDetails(null); createMutation.mutate(lastCreateRequest); } : undefined} onCreate={() => createScope()} onPrepareDocumentation={documentation.openPanel} />
         {sourceDocumentError && <p role="alert" className="mx-auto max-w-[1100px] px-5 pb-4 text-sm text-destructive">{sourceDocumentError}</p>}
         {documentationPanel}
       </>
@@ -1231,11 +1406,14 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
         </div>
       )}
       <ComparisonScopeWorkspace
+        key={`${projectId}:${areaKey}`}
         scope={scopeForWorkspace!}
         draftItems={draftItems}
         draftName={draftName}
         isDirty={isDirty}
         isSaving={saveMutation.isPending}
+        saveConfirmed={saveMutation.isSuccess && !isDirty}
+        nextStepHref={projectAreaPath(projectId, purchaseAreaId, 'comparisons')}
         validationErrors={{ ...validationErrors, form: validationErrors.form || (saveError ? `${saveErrorTitle ? `${saveErrorTitle}: ` : ''}${saveError}` : undefined) }}
         conflict={conflict}
         technicalRequirements={draftRequirements}
@@ -1322,6 +1500,13 @@ export function ComparisonScopePage({ projectId }: { projectId: string }) {
           onAssigned={() => documentsQuery.refetch().then(() => undefined)}
         />
       )}
+      <DocumentUploadDialog
+        open={Boolean(documentationUploadFiles)}
+        files={documentationUploadFiles ?? []}
+        projectId={projectId}
+        purchaseAreaId={purchaseAreaId}
+        onClose={() => setDocumentationUploadFiles(null)}
+      />
       {importSuccessMessage && <div className="mx-auto flex max-w-[1380px] items-center gap-2 px-4 pb-5 text-sm font-semibold text-accent sm:px-6 lg:px-10"><CheckCircle2 size={16} />{importSuccessMessage}</div>}
     </>
   );

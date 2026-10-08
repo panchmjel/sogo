@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   QueryClient,
   QueryClientProvider,
@@ -47,7 +47,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import { Link, Route, Switch, useLocation, useParams, Router as WouterRouter } from 'wouter';
+import { Link, Route, Switch, useLocation, useParams, useSearch, Router as WouterRouter } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -81,15 +81,22 @@ import {
   type OfferAnalysisResult,
   type Project,
   type SogoDocument,
-  uploadDocument,
   type ApiRole,
 } from '@/lib/api';
-import { getPurchaseArea, listPurchaseAreas, type PurchaseArea } from '@/lib/purchase-areas-api';
+import {
+  createPurchaseArea,
+  getPurchaseArea,
+  listPurchaseAreas,
+  type PurchaseArea,
+  type PurchaseAreaListResponse,
+} from '@/lib/purchase-areas-api';
 import {
   confirmPurchaseAreaSwitch,
+  getLastPurchaseAreaId,
   projectAreaPath,
   ProjectAreaProvider,
   purchaseAreaKey,
+  rememberPurchaseArea,
   registerPurchaseAreaDirtyGuard,
   useProjectArea,
   withPurchaseAreaQueryKey,
@@ -97,19 +104,21 @@ import {
 import { ApiSessionProvider, ACCESS_DENIED_MESSAGE, useApiSession } from '@/lib/app-session';
 import { displayAnalysisTerms, displayAnalysisValue, displaySourceRecordContent } from '@/lib/analysis-display';
 import { getProjectAccessState } from '@/lib/project-access-state';
-import { DocumentChatPage } from '@/components/ai-workspace';
-import { ComparisonScopePage } from '@/components/comparison-scope-page';
+import { PurchaseThreadPage } from '@/components/purchase-thread-page';
 import { ComparisonDetailPage, ComparisonsHistoryPage, ComparisonsNewPage } from '@/components/comparison-navigation';
 import { UsersAdminPage } from '@/components/users-admin-page';
 import { HelpPage } from '@/components/help-page';
 import { InvoiceDetailPage } from '@/components/InvoiceDetailPage';
 import { InvoiceListPage } from '@/components/InvoiceListPage';
 import { PurchaseAreasPage } from '@/components/purchase-areas-page';
+import { AwsCostsCard } from '@/components/aws-costs-card';
 import {
   DetachAreaDocumentButton,
   ProjectDocumentLibraryPicker,
-  refreshProjectDocumentQueries,
 } from '@/components/project-document-library';
+import { DocumentTypeSelect } from '@/components/document-type-select';
+import { DocumentUploadDialog } from '@/components/document-upload-dialog';
+import { canAnalyzeOffer, documentTypeOf, isOfferResultDocument } from '@/lib/document-types';
 
 const queryClient = new QueryClient();
 const setupMessage = 'Dane są chwilowo niedostępne';
@@ -117,6 +126,7 @@ const isConfigured = Boolean(isApiConfigured() && isAuthConfigured());
 
 type IconType = typeof LayoutDashboard;
 type ConnectionKind = 'missing' | 'unauthorized' | 'server' | 'empty';
+const ShellMenuContext = createContext<(() => void) | null>(null);
 
 const navItems: { href: string; label: string; icon: IconType; shortcut: string }[] = [
   { href: '/projects', label: 'Projekty', icon: FolderKanban, shortcut: '01' },
@@ -251,32 +261,19 @@ function isSupportedDocumentFile(file: File) {
   return supportedDocumentExtensions.some((extension) => name.endsWith(extension));
 }
 
-type UploadItemState = {
-  id: string;
-  name: string;
-  status: 'pending' | 'uploading' | 'success' | 'error';
-  error?: string;
-};
-
-type QueuedUpload = {
-  id: string;
-  file: File;
-  projectId: string;
-  purchaseAreaId: string | null;
-};
-
-function trimUploadHistory(items: UploadItemState[]) {
-  const active = items.filter((item) => item.status === 'pending' || item.status === 'uploading');
-  const completed = items.filter((item) => item.status === 'success' || item.status === 'error').slice(-12);
-  return [...active, ...completed];
-}
-
 function documentStatusLabel(status: SogoDocument['status']) {
   return status === 'UPLOAD_PENDING' ? 'Oczekuje na wgranie' : status === 'UPLOADED' ? 'Wgrano' : status;
 }
 
 function isOfferPdf(document: SogoDocument) {
-  return document.contentType.toLowerCase() === 'application/pdf' || document.filename.toLowerCase().endsWith('.pdf');
+  return documentTypeOf(document) === 'OFFER'
+    && (document.contentType.toLowerCase() === 'application/pdf' || document.filename.toLowerCase().endsWith('.pdf'));
+}
+
+function canStartOfferAnalysis(document: SogoDocument) {
+  return canAnalyzeOffer(document)
+    && document.status === 'UPLOADED'
+    && !['QUEUED', 'OCR', 'ANALYZING', 'RETRY_WAIT', 'NEEDS_REVIEW'].includes(document.analysisStatus ?? '');
 }
 
 function isAnalysisActive(document: SogoDocument) {
@@ -344,18 +341,21 @@ function ConfigBanner() {
   );
 }
 
-function Sidebar({ open, onClose, role }: { open: boolean; onClose: () => void; role?: ApiRole }) {
+function Sidebar({ open, onClose, role, authUserId }: { open: boolean; onClose: () => void; role?: ApiRole; authUserId: string | null | undefined }) {
   const [location] = useLocation();
   const projectScoped = location.startsWith('/projects/');
   const invoiceScoped = location.startsWith('/faktury/');
   const visibleNavItems = navItems.filter((item) => item.href !== '/users' || role === 'ADMIN');
   return (
     <>
-      {open && <button type="button" className="fixed inset-0 z-30 bg-foreground/30 md:hidden" onClick={onClose} aria-label="Zamknij menu" data-testid="button-close-menu-overlay" />}
-      <aside className={cn('fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col bg-sidebar text-sidebar-foreground transition-transform duration-200 lg:static lg:translate-x-0', open ? 'translate-x-0' : '-translate-x-full')} data-testid="sidebar">
+      {open && <button type="button" className={cn('fixed inset-0 z-30 bg-foreground/30', projectScoped ? '' : 'md:hidden')} onClick={onClose} aria-label="Zamknij menu" data-testid="button-close-menu-overlay" />}
+      <aside className={cn(
+        'fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col overflow-y-auto bg-sidebar text-sidebar-foreground transition-transform duration-200',
+        projectScoped ? (open ? 'translate-x-0' : '-translate-x-full') : cn('lg:static lg:translate-x-0', open ? 'translate-x-0' : '-translate-x-full'),
+      )} data-testid="sidebar">
         <div className="flex h-[88px] items-center justify-between px-6">
           <BrandMark inverse />
-           <button type="button" onClick={onClose} className="rounded-lg p-2 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden" aria-label="Zamknij menu" data-testid="button-close-menu"><X size={18} /></button>
+           <button type="button" onClick={onClose} className={cn('rounded-lg p-2 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground', projectScoped ? '' : 'lg:hidden')} aria-label="Zamknij menu" data-testid="button-close-menu"><X size={18} /></button>
         </div>
         <div className="mx-5 border-t border-sidebar-border" />
         <div className="px-4 pt-7">
@@ -380,6 +380,7 @@ function Sidebar({ open, onClose, role }: { open: boolean; onClose: () => void; 
             })}
           </nav>
         </div>
+        {role === 'ADMIN' && <AwsCostsCard role={role} authUserId={authUserId} menuOpen={open} />}
         <div className="mt-auto px-5 pb-5">
           <div className="border-t border-sidebar-border pt-4 text-xs leading-5 text-sidebar-foreground/45">Wybierz projekt, aby przejść do dokumentów i ofert.</div>
         </div>
@@ -391,7 +392,7 @@ function Sidebar({ open, onClose, role }: { open: boolean; onClose: () => void; 
 function Topbar({ onMenu }: { onMenu: () => void }) {
   const [location] = useLocation();
   const session = useApiSession();
-  const breadcrumb = location === '/faktury' ? 'Faktury' : location.startsWith('/faktury/') ? 'Faktura' : location === '/help' ? 'Pomoc' : location === '/users' ? 'Użytkownicy' : location === '/projects' ? 'Projekty' : location.includes('/scope') ? 'Lista materiałów' : location.includes('/documents') ? 'Pliki' : location.includes('/comparisons') ? 'Porównanie ofert' : location.includes('/assistant') ? 'Zapytaj o te zakupy' : 'Projekt';
+  const breadcrumb = location === '/faktury' ? 'Faktury' : location.startsWith('/faktury/') ? 'Faktura' : location === '/help' ? 'Pomoc' : location === '/users' ? 'Użytkownicy' : location === '/projects' ? 'Projekty' : location.includes('/scope') ? 'Do kupienia' : location.includes('/documents') ? 'Dokumenty' : location.includes('/comparisons') ? 'Oferty' : location.includes('/assistant') ? 'Asystent' : 'Projekt';
 
   return (
     <header className="flex h-[72px] items-center justify-between border-b border-border bg-card/75 px-5 backdrop-blur md:px-8" data-testid="topbar">
@@ -411,7 +412,8 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 
 function AppShell({ children, adminOnly = false }: { children: ReactNode; adminOnly?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const isProjectWorkspace = location.startsWith('/projects/');
   const { projectId } = useParams<{ projectId?: string }>();
   const session = useApiSession();
   const projectAccessQuery = useQuery({
@@ -475,13 +477,15 @@ function AppShell({ children, adminOnly = false }: { children: ReactNode; adminO
   if (isConfigured && adminOnly && session.user?.role !== 'ADMIN') return null;
 
   return (
-    <div className="sogo-noise flex min-h-[100dvh] bg-background text-foreground">
-      <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} role={session.user?.role} />
-       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onMenu={() => setMenuOpen(true)} />
-        <main className="sogo-grid min-h-0 flex-1 overflow-auto">{children}</main>
+    <ShellMenuContext.Provider value={() => setMenuOpen(true)}>
+      <div className="sogo-noise flex min-h-[100dvh] bg-background text-foreground">
+        <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} role={session.user?.role} authUserId={session.authUserId} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          {!isProjectWorkspace && <Topbar onMenu={() => setMenuOpen(true)} />}
+          <main className={cn('sogo-grid min-h-0 overflow-auto', isProjectWorkspace ? 'sogo-project-viewport flex-none' : 'flex-1')}>{children}</main>
+        </div>
       </div>
-    </div>
+    </ShellMenuContext.Provider>
   );
 }
 
@@ -764,20 +768,18 @@ function Metric({ label, value, icon: Icon }: { label: string; value: string; ic
   return <div className="rounded-2xl border border-border bg-card/70 p-5" data-testid={`metric-${label.toLowerCase().replaceAll(' ', '-')}`}><div className="flex items-center justify-between text-muted-foreground"><span className="text-xs font-semibold">{label}</span><Icon size={17} /></div><p className="mt-5 font-display text-3xl font-bold tracking-[-0.05em]">{value}</p></div>;
 }
 
-function ProjectHeader({
-  projectId,
-  areaName,
-  projectHome = false,
-}: {
-  projectId: string;
-  areaName?: string;
-  projectHome?: boolean;
-}) {
+function ProjectHeader({ projectId, areaName }: { projectId: string; areaName?: string }) {
   const [location, setLocation] = useLocation();
+  const search = useSearch();
+  const openShellMenu = useContext(ShellMenuContext);
   const queryClient = useQueryClient();
   const session = useApiSession();
   const { purchaseAreaId } = useProjectArea();
   const areaKey = purchaseAreaKey(purchaseAreaId);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newAreaName, setNewAreaName] = useState('');
+  const [nameError, setNameError] = useState('');
+  const createRequest = useRef<{ name: string; requestId: string } | null>(null);
   const projectsQuery = useQuery({
     queryKey: ['projects', session.authUserId],
     queryFn: listProjects,
@@ -788,7 +790,7 @@ function ProjectHeader({
   const areasQuery = useQuery({
     queryKey: ['purchase-areas', projectId],
     queryFn: ({ signal }) => listPurchaseAreas(projectId, signal),
-    enabled: !projectHome && Boolean(session.authUserId) && isApiConfigured() && isAuthConfigured(),
+    enabled: Boolean(session.authUserId) && isApiConfigured() && isAuthConfigured(),
     retry: false,
     staleTime: 10_000,
   });
@@ -802,41 +804,60 @@ function ProjectHeader({
   };
   const areaItems = areasQuery.data?.items ?? [];
   const general = areaItems.find((area) => area.isGeneral || area.purchaseAreaId === null) ?? generalArea;
-  const options = [
-    general,
-    ...areaItems.filter((area) => !area.isGeneral && area.purchaseAreaId !== null),
-  ];
+  const options = [general, ...areaItems.filter((area) => !area.isGeneral && area.purchaseAreaId !== null)];
   if (purchaseAreaId && !options.some((area) => area.purchaseAreaId === purchaseAreaId)) {
     options.push({
       projectId,
       purchaseAreaId,
-      name: areaName ?? 'Obszar zakupowy',
+      name: areaName ?? 'Temat zakupów',
       isGeneral: false,
       version: 0,
     });
   }
-  const tabs = [
-    { href: projectAreaPath(projectId, purchaseAreaId, 'documents'), label: 'Pliki', icon: Files },
-    { href: projectAreaPath(projectId, purchaseAreaId, 'scope'), label: 'Lista materiałów', icon: ClipboardList },
-    { href: projectAreaPath(projectId, purchaseAreaId, 'comparisons'), label: 'Porównanie ofert', icon: GitCompareArrows },
-  ];
-  const activeTab = tabs.find((tab) => location === tab.href || location.startsWith(`${tab.href}/`));
   const currentProjectName = projectsQuery.isPending ? 'Ładowanie projektu…' : project?.name ?? 'Projekt';
+  const isWorkspaceRoute = /\/(?:scope|assistant)$/.test(location.split('?')[0]);
+  const workspaceTab = new URLSearchParams(search).get('workspace');
+  const createMutation = useMutation({
+    mutationFn: async (input: { name: string; requestId: string }) => {
+      const response = await createPurchaseArea(projectId, input.name, input.requestId);
+      if (!response.area.purchaseAreaId || response.area.isGeneral) {
+        throw new Error('Serwer nie zwrócił nowego tematu zakupów.');
+      }
+      return response.area;
+    },
+    onSuccess: async (area) => {
+      const key = ['purchase-areas', projectId] as const;
+      queryClient.setQueryData<PurchaseAreaListResponse>(key, (current) => current
+        ? { ...current, items: [...current.items.filter((item) => item.purchaseAreaId !== area.purchaseAreaId), area] }
+        : { items: [area] },
+      );
+      queryClient.setQueryData(['purchase-area', projectId, area.purchaseAreaId], { area });
+      createRequest.current = null;
+      setCreateOpen(false);
+      setNewAreaName('');
+      setNameError('');
+      rememberPurchaseArea(projectId, area.purchaseAreaId);
+      await queryClient.invalidateQueries({ queryKey: key });
+      setLocation(projectAreaPath(projectId, area.purchaseAreaId, 'scope'));
+    },
+  });
 
   function switchArea(event: React.ChangeEvent<HTMLSelectElement>) {
-    const nextAreaId = event.currentTarget.value || null;
+    const value = event.currentTarget.value;
+    const nextAreaId = value || null;
     if (nextAreaId === purchaseAreaId) return;
     if (!confirmPurchaseAreaSwitch()) {
       event.currentTarget.value = purchaseAreaId ?? '';
       return;
     }
+    rememberPurchaseArea(projectId, nextAreaId);
     void queryClient.cancelQueries({
       predicate: (query) => {
         const key = query.queryKey;
         return key[1] === projectId && key[key.length - 1] === areaKey;
       },
     });
-    setLocation(projectAreaPath(projectId, nextAreaId, 'documents'));
+    setLocation(projectAreaPath(projectId, nextAreaId, 'scope'));
   }
 
   function guardProjectNavigation(event: React.MouseEvent<HTMLAnchorElement>) {
@@ -846,75 +867,101 @@ function ProjectHeader({
     }
   }
 
+  function submitCreateArea(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newAreaName.trim();
+    const validation = !name
+      ? 'Podaj nazwę tematu zakupów.'
+      : name.length > 160
+        ? 'Nazwa tematu może mieć maksymalnie 160 znaków.'
+        : /[\u0000-\u001f\u007f]/.test(name)
+          ? 'Nazwa nie może zawierać znaków kontrolnych.'
+          : '';
+    setNameError(validation);
+    if (validation || !confirmPurchaseAreaSwitch()) return;
+    if (createRequest.current?.name !== name) {
+      createRequest.current = { name, requestId: crypto.randomUUID() };
+    }
+    createMutation.mutate(createRequest.current);
+  }
+
+  function closeCreateArea() {
+    if (createMutation.isPending) return;
+    setCreateOpen(false);
+    setNewAreaName('');
+    setNameError('');
+    createRequest.current = null;
+    createMutation.reset();
+  }
+
   return (
-    <div className="border-b border-border bg-card/80 px-5 pt-6 md:px-8 md:pt-7">
-      <div className="mx-auto max-w-[1400px]">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Link href="/projects" onClick={guardProjectNavigation} className="hover:text-foreground" data-testid="link-projects-breadcrumb">Projekty</Link>
-              <ChevronRight size={13} />
-              {projectHome
-                ? <span className="truncate font-semibold text-foreground" data-testid="text-project-name">{currentProjectName}</span>
-                : <Link href={`/projects/${projectId}`} onClick={guardProjectNavigation} className="truncate font-semibold text-foreground hover:underline" data-testid="text-project-name">{currentProjectName}</Link>}
-              {!projectHome && (
-                <>
-                  <ChevronRight size={13} />
-                  <span className="truncate font-semibold text-foreground" data-testid="text-project-area-name">{areaName ?? (purchaseAreaId ? 'Obszar zakupowy' : 'Ogólne')}</span>
-                  {activeTab && <><ChevronRight size={13} /><span>{activeTab.label}</span></>}
-                </>
-              )}
-            </div>
-            <h1 className="mt-3 truncate font-display text-2xl font-bold tracking-[-0.04em]" data-testid="heading-project-shell">
-              {projectsQuery.isPending ? <span className="inline-block h-8 w-64 animate-pulse rounded-lg bg-secondary" /> : currentProjectName}
-            </h1>
-          </div>
-          {!projectHome && (
-            <div className="w-full shrink-0 sm:w-64">
-              <label htmlFor="select-project-purchase-area" className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Obszar zakupowy</label>
-              <select
-                id="select-project-purchase-area"
-                value={purchaseAreaId ?? ''}
-                onChange={switchArea}
-                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                data-testid="select-project-purchase-area"
-                aria-label="Przełącz obszar zakupowy"
-              >
-                {options.map((area) => <option key={area.purchaseAreaId ?? 'general'} value={area.purchaseAreaId ?? ''}>{area.name}</option>)}
-              </select>
-              {areasQuery.isError && <p className="mt-1 text-[11px] text-destructive" role="status">Nie udało się odświeżyć listy obszarów zakupowych.</p>}
-            </div>
-          )}
-        </div>
-        {!projectHome && (
-          <nav className="mt-6 flex gap-1 overflow-x-auto pb-px" aria-label="Zakładki projektu">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab?.href === tab.href;
-              return (
-                <Link
-                  key={tab.label}
-                  href={tab.href}
-                  onClick={guardProjectNavigation}
-                  className={cn('relative flex shrink-0 items-center gap-2 border-b-2 px-3 pb-3 text-sm font-semibold', active ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}
-                  data-testid={`tab-project-${tab.label.toLowerCase().replaceAll(' ', '-')}`}
-                >
-                  <Icon size={15} />{tab.label}
-                </Link>
-              );
-            })}
-            <Link
-              href={projectAreaPath(projectId, purchaseAreaId, 'assistant')}
-              onClick={guardProjectNavigation}
-              className="ml-auto inline-flex shrink-0 items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/10"
-              data-testid="action-ask-about-purchases"
-            >
-              <MessageSquareText size={15} /> Zapytaj o te zakupy
-            </Link>
+    <>
+      <header className="sticky top-0 z-20 flex h-14 min-w-0 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur sm:px-4" data-testid="project-workspace-header">
+        <button type="button" onClick={() => openShellMenu?.()} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-secondary" aria-label="Otwórz nawigację aplikacji" title="Nawigacja aplikacji" data-testid="button-project-open-menu"><Menu size={17} /></button>
+        <Link href="/projects" onClick={guardProjectNavigation} className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-lg px-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground sm:px-2" aria-label="Wróć do projektów" data-testid="link-projects-breadcrumb">
+          <ArrowLeft size={16} /><span className="hidden text-xs font-semibold sm:inline">Projekty</span>
+        </Link>
+        <span className="min-w-0 flex-1 truncate font-display text-sm font-bold tracking-tight sm:text-base" data-testid="text-project-name">{currentProjectName}</span>
+        <select
+          value={purchaseAreaId ?? ''}
+          onChange={switchArea}
+          className="h-9 max-w-[38vw] min-w-[112px] shrink-0 rounded-lg border border-input bg-background px-2 text-xs font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 sm:max-w-[15rem] sm:px-3 sm:text-sm"
+          data-testid="select-project-purchase-area"
+          aria-label="Temat"
+        >
+          {options.map((area) => <option key={area.purchaseAreaId ?? 'general'} value={area.purchaseAreaId ?? ''}>{area.name}</option>)}
+        </select>
+        {isWorkspaceRoute && (
+          <nav className="flex shrink-0 items-center gap-1" aria-label="Skróty projektu">
+            <button type="button" onClick={() => setLocation(`${projectAreaPath(projectId, purchaseAreaId, 'scope')}?workspace=files`)} aria-label="Pliki" title="Pliki" aria-pressed={workspaceTab === 'files'} className={`grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground hover:bg-secondary hover:text-foreground ${workspaceTab === 'files' ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-border'}`} data-testid="button-project-files"><Files size={15} /></button>
+            <button type="button" onClick={() => setLocation(`${projectAreaPath(projectId, purchaseAreaId, 'scope')}?workspace=comparisons`)} aria-label="Wyniki" title="Wyniki" aria-pressed={workspaceTab === 'comparisons'} className={`grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground hover:bg-secondary hover:text-foreground ${workspaceTab === 'comparisons' ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-border'}`} data-testid="button-project-results"><GitCompareArrows size={15} /></button>
           </nav>
         )}
-      </div>
-    </div>
+        <button
+          type="button"
+          onClick={() => {
+            setNewAreaName('');
+            setNameError('');
+            createMutation.reset();
+            setCreateOpen(true);
+          }}
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-lg border border-border bg-background px-2 text-xs font-semibold hover:bg-secondary sm:px-3"
+          aria-label="Dodaj temat zakupów"
+          data-testid="button-add-purchase-area"
+          title="Dodaj temat"
+        >
+          <Plus size={14} /><span className="hidden sm:inline">Dodaj temat</span>
+        </button>
+        <button type="button" onClick={() => void logout()} disabled={!isAuthConfigured() || session.sessionEnding} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label="Wyloguj" title="Wyloguj" data-testid="button-logout"><UserRound size={16} /></button>
+      </header>
+      {areasQuery.isError && <p className="px-4 py-1.5 text-[11px] text-destructive" role="status">Nie udało się odświeżyć listy tematów.</p>}
+      {createOpen && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-foreground/30 p-4" role="presentation">
+          <form onSubmit={submitCreateArea} className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl sm:p-6" role="dialog" aria-modal="true" aria-labelledby="create-purchase-area-title" data-testid="dialog-create-purchase-area">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="create-purchase-area-title" className="font-display text-lg font-bold">Dodaj temat</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Nowy temat otworzy własną rozmowę, listę materiałów i dokumenty.</p>
+              </div>
+              <button type="button" onClick={closeCreateArea} disabled={createMutation.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-secondary disabled:opacity-50" aria-label="Zamknij"><X size={16} /></button>
+            </div>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-xs font-semibold">Nazwa tematu</span>
+              <input value={newAreaName} onChange={(event) => setNewAreaName(event.target.value)} maxLength={160} autoFocus className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="Np. Instalacje sanitarne" />
+            </label>
+            {nameError && <p className="mt-2 text-xs text-destructive" role="alert">{nameError}</p>}
+            {createMutation.isError && <p className="mt-2 text-xs text-destructive" role="alert">{mutationErrorMessage(createMutation.error, 'Nie udało się utworzyć tematu. Wpisana nazwa pozostała w formularzu.')}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={closeCreateArea} disabled={createMutation.isPending} className="h-9 rounded-lg px-3 text-xs font-semibold text-muted-foreground hover:bg-secondary disabled:opacity-50">Anuluj</button>
+              <button type="submit" disabled={!newAreaName.trim() || createMutation.isPending} className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground disabled:opacity-50">
+                {createMutation.isPending ? <RefreshCw size={13} className="animate-spin" /> : <Plus size={13} />}
+                {createMutation.isPending ? 'Tworzenie…' : 'Utwórz temat'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -943,8 +990,9 @@ function ProjectAreaState({ title, detail, action }: { title: string; detail: st
   );
 }
 
-function ProjectLayout({ children, projectHome = false }: { children: ReactNode; projectHome?: boolean }) {
+function ProjectLayout({ children, fillViewport = false }: { children: ReactNode; fillViewport?: boolean }) {
   const { projectId = 'nieznany', purchaseAreaId: routeAreaId } = useParams<{ projectId: string; purchaseAreaId?: string }>();
+  const [location] = useLocation();
   const purchaseAreaId = routeAreaId?.trim() || null;
   const session = useApiSession();
   const areaQuery = useQuery({
@@ -956,25 +1004,40 @@ function ProjectLayout({ children, projectHome = false }: { children: ReactNode;
   });
   const areaKey = purchaseAreaKey(purchaseAreaId);
   const areaReady = !purchaseAreaId || (areaQuery.isSuccess && areaQuery.data.area.purchaseAreaId === purchaseAreaId);
+  useEffect(() => {
+    const projectRoot = `/projects/${projectId}`;
+    if (location === projectRoot || location === `${projectRoot}/`) return;
+    rememberPurchaseArea(projectId, purchaseAreaId);
+  }, [location, projectId, purchaseAreaId]);
+  const projectContent = purchaseAreaId && (!isApiConfigured() || !isAuthConfigured()) ? (
+    <ProjectAreaState title="Obszar zakupowy jest niedostępny" detail="Nie można sprawdzić dostępu do tego obszaru zakupowego w obecnej konfiguracji." />
+  ) : purchaseAreaId && areaQuery.isPending ? (
+    <main className="mx-auto max-w-[1400px] p-5 md:p-8 lg:p-10"><LoadingState label="Sprawdzanie dostępu do obszaru zakupowego…" /></main>
+  ) : purchaseAreaId && areaQuery.isError ? (
+    <ProjectAreaState
+      title="Nie udało się otworzyć obszaru zakupowego"
+      detail={areaQuery.error instanceof ApiRequestError && [403, 404].includes(areaQuery.error.status)
+        ? 'Obszar zakupowy nie istnieje lub nie jest już dostępny dla tego projektu.'
+        : 'Sprawdź połączenie i spróbuj ponownie.'}
+      action={<button type="button" onClick={() => void areaQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-semibold"><RefreshCw size={15} /> Spróbuj ponownie</button>}
+    />
+  ) : !areaReady ? (
+    <ProjectAreaState title="Obszar zakupowy jest niedostępny" detail="Nie znaleziono tego obszaru zakupowego w projekcie." />
+  ) : children;
 
   return (
     <ProjectAreaProvider key={`${projectId}:${areaKey}`} projectId={projectId} purchaseAreaId={purchaseAreaId}>
-      <ProjectHeader projectId={projectId} projectHome={projectHome} areaName={areaQuery.data?.area.name} />
-      {purchaseAreaId && (!isApiConfigured() || !isAuthConfigured()) ? (
-        <ProjectAreaState title="Obszar zakupowy jest niedostępny" detail="Nie można sprawdzić dostępu do tego obszaru zakupowego w obecnej konfiguracji." />
-      ) : purchaseAreaId && areaQuery.isPending ? (
-        <main className="mx-auto max-w-[1400px] p-5 md:p-8 lg:p-10"><LoadingState label="Sprawdzanie dostępu do obszaru zakupowego…" /></main>
-      ) : purchaseAreaId && areaQuery.isError ? (
-        <ProjectAreaState
-          title="Nie udało się otworzyć obszaru zakupowego"
-          detail={areaQuery.error instanceof ApiRequestError && [403, 404].includes(areaQuery.error.status)
-            ? 'Obszar zakupowy nie istnieje lub nie jest już dostępny dla tego projektu.'
-            : 'Sprawdź połączenie i spróbuj ponownie.'}
-          action={<button type="button" onClick={() => void areaQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-semibold"><RefreshCw size={15} /> Spróbuj ponownie</button>}
-        />
-      ) : !areaReady ? (
-        <ProjectAreaState title="Obszar zakupowy jest niedostępny" detail="Nie znaleziono tego obszaru zakupowego w projekcie." />
-      ) : children}
+      {fillViewport ? (
+        <div className="sogo-project-viewport flex min-h-0 flex-col">
+          <div className="shrink-0"><ProjectHeader projectId={projectId} areaName={areaQuery.data?.area.name} /></div>
+          <div className="min-h-0 flex-1 overflow-auto">{projectContent}</div>
+        </div>
+      ) : (
+        <>
+          <ProjectHeader projectId={projectId} areaName={areaQuery.data?.area.name} />
+          {projectContent}
+        </>
+      )}
     </ProjectAreaProvider>
   );
 }
@@ -986,10 +1049,8 @@ function DocumentsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadItems, setUploadItems] = useState<UploadItemState[]>([]);
-  const uploadQueueRef = useRef<QueuedUpload[]>([]);
-  const currentUploadRef = useRef<QueuedUpload | null>(null);
-  const processingUploadsRef = useRef(false);
+  const [uploadDialogFiles, setUploadDialogFiles] = useState<File[] | null>(null);
+  const [uploadSelectionError, setUploadSelectionError] = useState('');
   const documentsQuery = useQuery({
     queryKey: withPurchaseAreaQueryKey(['documents', projectId], purchaseAreaId),
     queryFn: ({ signal }) => purchaseAreaId
@@ -1011,7 +1072,7 @@ function DocumentsPage() {
 
   useEffect(() => {
     const guardKey = `document-upload:${projectId}:${purchaseAreaId ?? 'general'}`;
-    const isDirty = () => Boolean(currentUploadRef.current || uploadQueueRef.current.length);
+    const isDirty = () => Boolean(uploadDialogFiles);
     const unregister = registerPurchaseAreaDirtyGuard(guardKey, isDirty);
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!isDirty()) return;
@@ -1023,73 +1084,39 @@ function DocumentsPage() {
       unregister();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [projectId, purchaseAreaId]);
+  }, [projectId, purchaseAreaId, uploadDialogFiles]);
 
-  async function processUploadQueue() {
-    if (processingUploadsRef.current) return;
-    processingUploadsRef.current = true;
-    let succeededByArea = new Map<string, { projectId: string; purchaseAreaId: string | null }>();
-    try {
-      while (uploadQueueRef.current.length) {
-        const item = uploadQueueRef.current.shift();
-        if (!item) continue;
-        currentUploadRef.current = item;
-        setUploadItems((current) => trimUploadHistory(current.map((entry) => entry.id === item.id ? { ...entry, status: 'uploading' } : entry)));
-        try {
-          await uploadDocument(item.projectId, item.file, item.purchaseAreaId);
-          succeededByArea.set(`${item.projectId}:${item.purchaseAreaId ?? 'general'}`, { projectId: item.projectId, purchaseAreaId: item.purchaseAreaId });
-          setUploadItems((current) => trimUploadHistory(current.map((entry) => entry.id === item.id ? { ...entry, status: 'success' } : entry)));
-        } catch (error) {
-          setUploadItems((current) => trimUploadHistory(current.map((entry) => entry.id === item.id ? {
-            ...entry,
-            status: 'error',
-            error: mutationErrorMessage(error, 'Nie udało się wgrać pliku.'),
-          } : entry)));
-        } finally {
-          currentUploadRef.current = null;
-        }
-      }
-    } finally {
-      processingUploadsRef.current = false;
-      await Promise.all(Array.from(succeededByArea.values()).map(({ projectId: uploadedProjectId, purchaseAreaId: uploadedAreaId }) =>
-        refreshProjectDocumentQueries(queryClient, uploadedProjectId, uploadedAreaId),
-      ));
-    }
-  }
-
-  function uploadFiles(files: File[]) {
-    const queued: QueuedUpload[] = [];
-    const visibleItems: UploadItemState[] = [];
-    files.forEach((originalFile, index) => {
+  function openUploadDialog(files: File[]) {
+    const supported: File[] = [];
+    const rejected: string[] = [];
+    files.forEach((originalFile) => {
       let file = originalFile;
       const isImageFromClipboard = originalFile.type === 'image/png' || originalFile.type === 'image/jpeg';
       if (isImageFromClipboard && !/\.[a-z0-9]+$/i.test(originalFile.name)) {
         const extension = originalFile.type === 'image/png' ? '.png' : '.jpg';
         file = new File([originalFile], `${originalFile.name || 'wklejony-obraz'}${extension}`, { type: originalFile.type, lastModified: originalFile.lastModified });
       }
-      const id = `${file.name}-${file.lastModified}-${index}-${crypto.randomUUID()}`;
       if (!isSupportedDocumentFile(file)) {
-        visibleItems.push({ id, name: file.name, status: 'error', error: 'Nieobsługiwany format pliku. Wybierz PDF, XLSX, PNG, JPG lub JPEG.' });
+        rejected.push(file.name);
         return;
       }
-      visibleItems.push({ id, name: file.name, status: 'pending' });
-      queued.push({ id, file, projectId, purchaseAreaId });
+      supported.push(file);
     });
-    if (!visibleItems.length) return;
-    setUploadItems((current) => trimUploadHistory([...current, ...visibleItems]));
-    uploadQueueRef.current.push(...queued);
-    void processUploadQueue();
+    setUploadSelectionError(rejected.length
+      ? `Pominięto nieobsługiwane pliki: ${rejected.join(', ')}. Obsługiwane formaty: PDF, XLSX, PNG, JPG i JPEG.`
+      : '');
+    if (supported.length) setUploadDialogFiles(supported);
   }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files ?? []);
     event.currentTarget.value = '';
-    uploadFiles(files);
+    openUploadDialog(files);
   }
 
   function handlePaste(event: React.ClipboardEvent<HTMLDivElement>) {
     const files = Array.from(event.clipboardData.files);
-    if (files.length) uploadFiles(files);
+    if (files.length) openUploadDialog(files);
   }
 
   return (
@@ -1098,10 +1125,13 @@ function DocumentsPage() {
           eyebrow="02 / ŹRÓDŁA"
           title="Pliki"
           description={purchaseAreaId
-            ? 'Pliki przypisane do tego obszaru zakupowego. Te same pliki mogą być używane w innych obszarach.'
-            : 'Wspólna biblioteka plików projektu. Przypisz istniejące oferty do obszarów bez ponownego wgrywania.'}
+            ? 'Pliki przypisane do tego obszaru zakupowego. Potwierdź ich rodzaj przed zapisaniem.'
+            : 'Wspólna biblioteka plików projektu. Potwierdź rodzaj dokumentu przed zapisaniem; pliki można przypisywać do obszarów bez ponownego wgrywania.'}
           action={
             <div className="flex flex-wrap gap-2">
+              <Link href={projectAreaPath(projectId, purchaseAreaId, 'scope')} className="inline-flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-border bg-background px-4 text-sm font-bold hover:bg-secondary" data-testid="link-documents-return-to-thread">
+                <ArrowLeft size={15} /> Wróć do rozmowy
+              </Link>
               {purchaseAreaId && (
                 <button
                   type="button"
@@ -1121,13 +1151,14 @@ function DocumentsPage() {
           }
         />
         <p id="upload-help" className="mt-4 text-xs leading-5 text-muted-foreground">
-          Przeciągnij pliki w dowolne miejsce poniżej albo wklej obraz ze schowka. Obsługiwane formaty: PDF, XLSX, PNG, JPG i JPEG.
+          Przeciągnij pliki w dowolne miejsce poniżej albo wklej obraz ze schowka. Przed wgraniem potwierdź rodzaj każdego pliku. Obsługiwane formaty: PDF, XLSX, PNG, JPG i JPEG.
         </p>
+        {uploadSelectionError && <p className="mt-3 text-sm text-destructive" role="alert">{uploadSelectionError}</p>}
         <div
           className={cn('mt-8 grid gap-5 lg:grid-cols-[1fr_290px]', isDragging && 'rounded-2xl ring-2 ring-primary ring-offset-4 ring-offset-background')}
           onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
-          onDrop={(event) => { event.preventDefault(); setIsDragging(false); void uploadFiles(Array.from(event.dataTransfer.files)); }}
+          onDrop={(event) => { event.preventDefault(); setIsDragging(false); openUploadDialog(Array.from(event.dataTransfer.files)); }}
           onPaste={handlePaste}
           tabIndex={0}
           role="region"
@@ -1173,7 +1204,7 @@ function DocumentsPage() {
               ) :
               <div className="space-y-3" data-testid="list-documents">
                 {documents.map((document) => {
-                  const canAnalyze = isOfferPdf(document) && document.status === 'UPLOADED' && !document.analysisStatus;
+                  const canAnalyze = canStartOfferAnalysis(document);
                   return (
                     <div key={document.documentId} className="rounded-2xl border border-border bg-card/70 p-4 transition hover:border-foreground/25" data-testid={`document-row-${document.documentId}`}>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1181,6 +1212,9 @@ function DocumentsPage() {
                           <p className="truncate text-sm font-bold">{document.filename}</p>
                           <p className="mt-1 text-xs text-muted-foreground"><PolishDate value={document.createdAt} /></p>
                         </Link>
+                        <div className="w-full min-w-0 sm:max-w-[190px]">
+                          <DocumentTypeSelect projectId={projectId} purchaseAreaId={purchaseAreaId} document={document} />
+                        </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="shrink-0 rounded-full bg-secondary px-3 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">{documentStatusLabel(document.status)}</span>
                           <AnalysisStatusBadge document={document} />
@@ -1190,10 +1224,10 @@ function DocumentsPage() {
                               <Sparkles size={14} />{analyzeMutation.isPending ? 'Uruchamianie…' : 'Analizuj ofertę'}
                             </button>
                           )}
-                          {document.analysisStatus === 'NEEDS_REVIEW' && <Link href={projectAreaPath(projectId, purchaseAreaId, `documents/${document.documentId}`)} className="inline-flex h-9 items-center rounded-xl border border-border px-3 text-xs font-bold hover:bg-secondary" data-testid={`link-analysis-result-${document.documentId}`}>Zobacz wynik</Link>}
+                          {isOfferResultDocument(document) && <Link href={projectAreaPath(projectId, purchaseAreaId, `documents/${document.documentId}`)} className="inline-flex h-9 items-center rounded-xl border border-border px-3 text-xs font-bold hover:bg-secondary" data-testid={`link-analysis-result-${document.documentId}`}>Zobacz wynik</Link>}
                         </div>
                       </div>
-                      {(document.analysisStatus === 'FAILED' || document.analysisStatus === 'RETRY_WAIT') && document.analysisError && <p className="mt-3 border-t border-border pt-3 text-xs text-destructive" data-testid={`text-analysis-error-${document.documentId}`}>{document.analysisError}</p>}
+                      {documentTypeOf(document) === 'OFFER' && (document.analysisStatus === 'FAILED' || document.analysisStatus === 'RETRY_WAIT') && document.analysisError && <p className="mt-3 border-t border-border pt-3 text-xs text-destructive" data-testid={`text-analysis-error-${document.documentId}`}>{document.analysisError}</p>}
                     </div>
                   );
                 })}
@@ -1205,22 +1239,6 @@ function DocumentsPage() {
             <InfoCard icon={CircleAlert} title="Sprawdzenie" detail="Status „Do sprawdzenia” oznacza, że dane wymagają weryfikacji przed decyzją zakupową." />
           </aside>
         </div>
-        {uploadItems.length > 0 && (
-          <div className="mt-5 space-y-2" aria-live="polite" data-testid="upload-progress">
-            {uploadItems.map((item) => (
-              <div key={item.id} className="rounded-xl border border-border bg-card/70 px-4 py-3 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="min-w-0 truncate font-semibold">{item.name}</span>
-                  <span className={cn('shrink-0 text-xs', item.status === 'error' ? 'text-destructive' : item.status === 'success' ? 'text-accent' : 'text-muted-foreground')}>
-                    {item.status === 'pending' ? 'Oczekuje…' : item.status === 'uploading' ? 'Wgrywanie…' : item.status === 'success' ? 'Wgrano' : 'Błąd'}
-                  </span>
-                </div>
-                {item.status === 'uploading' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary"><div className="h-full w-2/3 animate-pulse rounded-full bg-primary" /></div>}
-                {item.error && <p className="mt-1 text-xs leading-5 text-destructive" role="alert">{item.error}</p>}
-              </div>
-            ))}
-          </div>
-        )}
         {analyzeMutation.isError && <p className="mt-4 text-sm text-destructive" role="alert">{mutationErrorMessage(analyzeMutation.error, 'Nie udało się uruchomić analizy.')}</p>}
         {purchaseAreaId && (
           <ProjectDocumentLibraryPicker
@@ -1232,6 +1250,13 @@ function DocumentsPage() {
             onAssigned={() => documentsQuery.refetch().then(() => undefined)}
           />
         )}
+        <DocumentUploadDialog
+          open={Boolean(uploadDialogFiles)}
+          files={uploadDialogFiles ?? []}
+          projectId={projectId}
+          purchaseAreaId={purchaseAreaId}
+          onClose={() => setUploadDialogFiles(null)}
+        />
       </div>
   );
 }
@@ -1372,18 +1397,20 @@ function DocumentsDetailPage() {
     mutationFn: () => getAnalysis(projectId, documentId, purchaseAreaId),
   });
   const document = documentsQuery.data?.find((item) => item.documentId === documentId);
+  const showOfferResult = Boolean(document && isOfferResultDocument(document));
   const hasConfiguration = isApiConfigured() && isAuthConfigured();
   const analysisLoadedRef = useRef(false);
 
   useEffect(() => {
-    if (document?.analysisStatus === 'NEEDS_REVIEW' && !analysisLoadedRef.current) {
+    if (showOfferResult && !analysisLoadedRef.current) {
       analysisLoadedRef.current = true;
       analysisMutation.mutate();
     }
-    if (document?.analysisStatus !== 'NEEDS_REVIEW') {
+    if (!showOfferResult) {
       analysisLoadedRef.current = false;
+      analysisMutation.reset();
     }
-  }, [document?.analysisStatus]);
+  }, [showOfferResult]);
 
   function handleDownload() {
     downloadMutation.mutate(undefined, {
@@ -1395,7 +1422,11 @@ function DocumentsDetailPage() {
 
   return (
       <div className="mx-auto max-w-[1400px] p-5 md:p-8 lg:p-10">
-         <div className="mb-6 flex items-center gap-2 text-xs text-muted-foreground"><Link href={projectAreaPath(projectId, purchaseAreaId, 'documents')} className="flex items-center gap-1 hover:text-foreground" data-testid="link-back-documents"><ArrowLeft size={14} /> Dokumenty</Link></div>
+         <div className="mb-6 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+           <Link href={projectAreaPath(projectId, purchaseAreaId, 'documents')} className="flex items-center gap-1 hover:text-foreground" data-testid="link-back-documents"><ArrowLeft size={14} /> Pliki</Link>
+           <span aria-hidden="true">/</span>
+           <Link href={projectAreaPath(projectId, purchaseAreaId, 'scope')} className="font-semibold text-accent hover:underline" data-testid="link-document-return-to-thread">Wróć do rozmowy</Link>
+         </div>
         {!hasConfiguration ? <ConnectionState kind={isApiConfigured() ? 'unauthorized' : 'missing'} /> :
           documentsQuery.isPending ? <LoadingState label="Pobieranie dokumentu…" /> :
            documentsQuery.isError ? <ConnectionState kind={connectionKindForError(documentsQuery.error)} title="Nie udało się pobrać dokumentu" detail={connectionErrorDetail(documentsQuery.error, 'Spróbuj ponownie za chwilę.')} /> :
@@ -1407,21 +1438,24 @@ function DocumentsDetailPage() {
               description={isOfferPdf(document) ? `Status: ${analysisStatusLabel(document.analysisStatus)}` : documentStatusLabel(document.status)}
               action={
                 <div className="flex flex-wrap gap-2">
-                  {isOfferPdf(document) && document.status === 'UPLOADED' && !document.analysisStatus && <button type="button" onClick={() => analyzeMutation.mutate()} disabled={analyzeMutation.isPending} className="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-bold text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-analyze-document"><Sparkles size={16} />{analyzeMutation.isPending ? 'Uruchamianie…' : 'Analizuj ofertę'}</button>}
+                  <div className="w-full sm:w-[190px]">
+                    <DocumentTypeSelect projectId={projectId} purchaseAreaId={purchaseAreaId} document={document} />
+                  </div>
+                  {canStartOfferAnalysis(document) && <button type="button" onClick={() => analyzeMutation.mutate()} disabled={analyzeMutation.isPending} className="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-bold text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-analyze-document"><Sparkles size={16} />{analyzeMutation.isPending ? 'Uruchamianie…' : 'Analizuj ofertę'}</button>}
                   <button type="button" onClick={handleDownload} disabled={document.status !== 'UPLOADED' || downloadMutation.isPending} className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-download-document"><Download size={16} /> {downloadMutation.isPending ? 'Przygotowanie…' : 'Otwórz oryginał'}</button>
                 </div>
               }
             />
-            <div className="mt-5 flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">Status analizy:</span><AnalysisStatusBadge document={document} />{(document.analysisStatus === 'FAILED' || document.analysisStatus === 'RETRY_WAIT') && document.analysisError && <span className="text-xs text-destructive">{document.analysisError}</span>}</div>
+            {isOfferPdf(document) && <div className="mt-5 flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">Status analizy:</span><AnalysisStatusBadge document={document} />{(document.analysisStatus === 'FAILED' || document.analysisStatus === 'RETRY_WAIT') && document.analysisError && <span className="text-xs text-destructive">{document.analysisError}</span>}</div>}
             <div className="mt-8 grid gap-5 xl:grid-cols-[1fr_1fr]">
                <div className="rounded-2xl border border-border bg-card/70 p-5"><div className="flex items-center gap-2 border-b border-border pb-4"><FileCheck2 size={17} className="text-accent" /><p className="text-sm font-bold">Oryginał dokumentu</p></div><div className="mt-5 flex items-center justify-between gap-4"><div><p className="text-sm font-semibold">{document.filename}</p><p className="mt-1 text-xs text-muted-foreground">Otwórz plik, aby sprawdzić dane źródłowe.</p></div><button type="button" onClick={handleDownload} disabled={document.status !== 'UPLOADED' || downloadMutation.isPending} className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-bold disabled:opacity-50"><Download size={14} /> Otwórz</button></div></div>
                <details className="rounded-2xl border border-border bg-card/70 p-5"><summary className="cursor-pointer text-sm font-bold">Szczegóły dokumentu</summary><div className="mt-4 space-y-3 text-sm"><div className="flex items-center justify-between border-b border-border/70 py-2"><span className="text-muted-foreground">Rozmiar</span><span>{formatDocumentSize(document.size)}</span></div><div className="flex items-center justify-between border-b border-border/70 py-2"><span className="text-muted-foreground">Dodano</span><PolishDate value={document.createdAt} /></div><div className="flex items-center justify-between py-2"><span className="text-muted-foreground">Stan pliku</span><span>{documentStatusLabel(document.status)}</span></div></div></details>
             </div>
             {downloadMutation.isError && <p className="mt-4 text-sm text-destructive" role="alert">{mutationErrorMessage(downloadMutation.error, 'Nie udało się przygotować pobierania.')}</p>}
-            {analyzeMutation.isError && <p className="mt-4 text-sm text-destructive" role="alert">{mutationErrorMessage(analyzeMutation.error, 'Nie udało się uruchomić analizy.')}</p>}
-            {analysisMutation.isError && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between" role="alert"><p className="text-sm text-destructive">{analysisErrorMessage(analysisMutation.error)}</p><button type="button" onClick={() => analysisMutation.mutate()} className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 px-3 text-xs font-bold text-destructive hover:bg-destructive/10" data-testid="button-retry-analysis-result">Pobierz wynik ponownie</button></div>}
-             {analysisMutation.isPending && <div className="mt-8"><LoadingState label="Pobieranie zapisanego wyniku…" /></div>}
-             {analysisMutation.data && <div className="mt-8"><AnalysisResultView result={analysisMutation.data.result} /></div>}
+            {canAnalyzeOffer(document) && analyzeMutation.isError && <p className="mt-4 text-sm text-destructive" role="alert">{mutationErrorMessage(analyzeMutation.error, 'Nie udało się uruchomić analizy.')}</p>}
+            {showOfferResult && analysisMutation.isError && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between" role="alert"><p className="text-sm text-destructive">{analysisErrorMessage(analysisMutation.error)}</p><button type="button" onClick={() => analysisMutation.mutate()} className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 px-3 text-xs font-bold text-destructive hover:bg-destructive/10" data-testid="button-retry-analysis-result">Pobierz wynik ponownie</button></div>}
+              {showOfferResult && analysisMutation.isPending && <div className="mt-8"><LoadingState label="Pobieranie zapisanego wyniku…" /></div>}
+              {showOfferResult && analysisMutation.data && <div className="mt-8"><AnalysisResultView result={analysisMutation.data.result} /></div>}
           </>
         }
       </div>
@@ -1442,7 +1476,8 @@ function ComparisonSection({ title, icon: Icon }: { title: string; icon: IconTyp
 }
 
 function AssistantPage() {
-  return <ProjectLayout><DocumentChatPage /></ProjectLayout>;
+  const { projectId = 'nieznany' } = useParams<{ projectId: string }>();
+  return <ProjectLayout fillViewport><PurchaseThreadPage projectId={projectId} /></ProjectLayout>;
 }
 
 function UsersRoute() {
@@ -1475,7 +1510,7 @@ function ScopeRoute() {
 }
 
 function ComparisonsIndexRoute() {
-  return <AppShell><ComparisonsIndexPage /></AppShell>;
+  return <AppShell><ProjectLayout><ComparisonsIndexPage /></ProjectLayout></AppShell>;
 }
 
 function DocumentsRoute() {
@@ -1486,9 +1521,55 @@ function AssistantRoute() {
   return <AppShell><AssistantPage /></AppShell>;
 }
 
+function ProjectEntryRedirect({ projectId }: { projectId: string }) {
+  const [, setLocation] = useLocation();
+  const session = useApiSession();
+  const areasQuery = useQuery({
+    queryKey: ['purchase-areas', projectId],
+    queryFn: ({ signal }) => listPurchaseAreas(projectId, signal),
+    enabled: Boolean(session.authUserId) && isApiConfigured() && isAuthConfigured(),
+    retry: false,
+    staleTime: 10_000,
+    refetchOnMount: 'always',
+  });
+  const configured = isApiConfigured() && isAuthConfigured();
+
+  useEffect(() => {
+    if (!configured) {
+      setLocation(projectAreaPath(projectId, null, 'scope'), { replace: true });
+      return;
+    }
+    if (!session.authUserId || !areasQuery.isSuccess) return;
+    const savedAreaId = getLastPurchaseAreaId(projectId);
+    const savedArea = savedAreaId
+      ? areasQuery.data.items.find((area) => !area.isGeneral && area.purchaseAreaId === savedAreaId)
+      : undefined;
+    const nextAreaId = savedArea?.purchaseAreaId ?? null;
+    if (savedAreaId && !savedArea) rememberPurchaseArea(projectId, null);
+    setLocation(projectAreaPath(projectId, nextAreaId, 'scope'), { replace: true });
+  }, [areasQuery.data, areasQuery.isSuccess, configured, projectId, session.authUserId, setLocation]);
+
+  if (!configured) return null;
+  if (areasQuery.isError) {
+    return (
+      <div className="mx-auto w-full max-w-xl p-5 sm:p-8">
+        <ProjectAreaState
+          title="Nie udało się odtworzyć ostatniego tematu"
+          detail="Nie można sprawdzić, które tematy zakupów są dostępne. Spróbuj ponownie albo otwórz temat Ogólne."
+          action={<div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => void areasQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-semibold"><RefreshCw size={15} /> Spróbuj ponownie</button>
+            <button type="button" onClick={() => setLocation(projectAreaPath(projectId, null, 'scope'), { replace: true })} className="inline-flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground">Otwórz Ogólne</button>
+          </div>}
+        />
+      </div>
+    );
+  }
+  return <div className="grid min-h-0 flex-1 place-items-center p-5"><LoadingState label="Otwieranie rozmowy…" /></div>;
+}
+
 function ProjectRoute() {
   const { projectId = 'nieznany' } = useParams<{ projectId: string }>();
-  return <AppShell><ProjectLayout projectHome><PurchaseAreasPage projectId={projectId} /></ProjectLayout></AppShell>;
+  return <AppShell><ProjectLayout fillViewport><ProjectEntryRedirect projectId={projectId} /></ProjectLayout></AppShell>;
 }
 
 function ProjectsRoute() {
@@ -1529,7 +1610,7 @@ function Router() {
 
 function ScopePage() {
   const { projectId = 'nieznany' } = useParams<{ projectId: string }>();
-  return <ProjectLayout><ComparisonScopePage projectId={projectId} /></ProjectLayout>;
+  return <ProjectLayout fillViewport><PurchaseThreadPage projectId={projectId} /></ProjectLayout>;
 }
 
 function App() {

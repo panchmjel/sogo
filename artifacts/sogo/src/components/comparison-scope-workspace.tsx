@@ -13,7 +13,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { useCallback, useLayoutEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Link } from 'wouter';
 import {
@@ -85,6 +85,8 @@ export type ComparisonScopeWorkspaceProps = {
   draftName: string;
   isDirty: boolean;
   isSaving: boolean;
+  saveConfirmed?: boolean;
+  nextStepHref?: string;
   validationErrors?: ComparisonScopeValidationErrors;
   conflict?: ComparisonScopeConflict | null;
   technicalRequirements: DocumentationTechnicalRequirement[];
@@ -110,6 +112,10 @@ export type ComparisonScopeWorkspaceProps = {
   onToggleDocumentationIssue: (issueId: string, resolved: boolean) => void;
   onOpenDocument: (documentId: string) => void;
 };
+
+function isScopeItemIncomplete(item: ComparisonScopeDraftItem) {
+  return !item.name.trim() || !item.quantity.trim() || !item.unit.trim();
+}
 
 function cn(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(' ');
@@ -322,7 +328,7 @@ function ItemFields({
         <EditableField
           label={`Ilość dla ${item.name || 'materiału'}`}
           value={item.quantity}
-          placeholder="Ilość"
+          placeholder="Do ustalenia"
           inputMode="decimal"
           error={errors?.quantity}
           onChange={(value) => onItemChange(item.id, 'quantity', value)}
@@ -363,8 +369,7 @@ function ItemRow({
   onRemoveItem: (itemId: string) => void;
   onOpenDocument: ComparisonScopeWorkspaceProps['onOpenDocument'];
 }) {
-  const incomplete =
-    !item.name.trim() || !item.quantity.trim() || !item.unit.trim();
+  const incomplete = isScopeItemIncomplete(item);
 
   return (
     <tr id={`scope-item-${item.id}-desktop`} data-scope-item-id={item.id} className="group border-t border-border/75 align-top first:border-t-0">
@@ -383,7 +388,7 @@ function ItemRow({
         <EditableField
           label={`Ilość dla ${item.name || 'materiału'}`}
           value={item.quantity}
-          placeholder="Ilość"
+          placeholder="Do ustalenia"
           inputMode="decimal"
           error={errors?.quantity}
           onChange={(value) => onItemChange(item.id, 'quantity', value)}
@@ -437,8 +442,7 @@ function MobileItemCard({
   onRemoveItem: (itemId: string) => void;
   onOpenDocument: ComparisonScopeWorkspaceProps['onOpenDocument'];
 }) {
-  const incomplete =
-    !item.name.trim() || !item.quantity.trim() || !item.unit.trim();
+  const incomplete = isScopeItemIncomplete(item);
 
   return (
     <article id={`scope-item-${item.id}-mobile`} data-scope-item-id={item.id} className="min-w-0 rounded-xl border border-border bg-background/65 p-3.5">
@@ -491,6 +495,8 @@ export default function ComparisonScopeWorkspace({
   draftName,
   isDirty,
   isSaving,
+  saveConfirmed = false,
+  nextStepHref,
   validationErrors,
   conflict,
   technicalRequirements,
@@ -512,6 +518,8 @@ export default function ComparisonScopeWorkspace({
   onToggleDocumentationIssue,
   onOpenDocument,
 }: ComparisonScopeWorkspaceProps) {
+  const [search, setSearch] = useState('');
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const hasValidationErrors = Boolean(
     validationErrors?.draftName ||
       validationErrors?.form ||
@@ -519,12 +527,24 @@ export default function ComparisonScopeWorkspace({
         Object.values(item).some(Boolean),
       ),
   );
-  const incompleteCount = draftItems.filter((item) => !item.name.trim() || !item.quantity.trim() || !item.unit.trim()).length;
+  const incompleteCount = draftItems.filter(isScopeItemIncomplete).length;
+  const searchTerm = search.trim().toLocaleLowerCase('pl-PL');
+  const visibleItems = draftItems.filter((item) => {
+    if (onlyIncomplete && !isScopeItemIncomplete(item)) return false;
+    if (!searchTerm) return true;
+    const searchableText = [
+      item.name,
+      item.unit,
+      item.source?.documentName,
+      item.source?.label,
+      item.source?.excerpt,
+      item.source?.originalName,
+    ].filter((value): value is string => Boolean(value)).join(' ').toLocaleLowerCase('pl-PL');
+    return searchableText.includes(searchTerm);
+  });
   const hasAutoFocusedIncomplete = useRef(false);
   const focusFirstIncomplete = useCallback(() => {
-    const firstIncomplete = draftItems.find((item) =>
-      !item.name.trim() || !item.quantity.trim() || !item.unit.trim(),
-    );
+    const firstIncomplete = draftItems.find(isScopeItemIncomplete);
     if (!firstIncomplete) {
       document.getElementById('comparison-scope-materials')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
       return;
@@ -556,21 +576,16 @@ export default function ComparisonScopeWorkspace({
         <header className="border-b border-border px-5 py-5 sm:px-7 sm:py-6 lg:px-9">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-accent">
-                 <span>Lista materiałów</span>
-                <span className="text-muted-foreground/50">/</span>
-                <span className="text-muted-foreground">Wersja robocza</span>
-              </div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">DO KUPIENIA</p>
               <h1 className="mt-3 max-w-3xl font-display text-3xl font-bold tracking-[-0.055em] text-foreground sm:text-4xl">
-                Przygotuj materiały do porównania
+                Sprawdź listę zakupów
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                 Sprawdź pozycje, ilości i jednostki przed zapisaniem listy. Zmiany
-                 zostaną wykorzystane przy kolejnym porównaniu ofert.
+                 Sprawdź materiały i ilości. Źródło oraz obliczenie znajdziesz przy pozycji.
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-start">
-              <ProjectDocumentationTrigger onOpen={onPrepareFromDocumentation} />
+               <ProjectDocumentationTrigger onOpen={onPrepareFromDocumentation} label="Dodaj dokumentację" />
               <div className="flex flex-wrap items-center gap-2">
                 <ActionButton icon={Upload} onClick={onImport}>
                   Dodaj z oferty
@@ -627,7 +642,7 @@ export default function ComparisonScopeWorkspace({
                 htmlFor="comparison-scope-name"
                 className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground"
               >
-                 Nazwa listy materiałów
+                  Nazwa listy zakupów
               </label>
               <input
                 id="comparison-scope-name"
@@ -641,7 +656,7 @@ export default function ComparisonScopeWorkspace({
                     ? 'border-destructive/70'
                     : 'border-input',
                 )}
-                 placeholder={scope.name || 'Nazwa listy materiałów'}
+                 placeholder={scope.name || 'Lista zakupów'}
               />
               <FieldError>{validationErrors?.draftName}</FieldError>
             </div>
@@ -660,19 +675,19 @@ export default function ComparisonScopeWorkspace({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 id="comparison-scope-materials" className="font-display text-xl font-bold tracking-[-0.035em]">
-                     Lista materiałów
+                      Materiały
                   </h2>
                   <span className="rounded-full bg-secondary px-2 py-1 font-mono text-[10px] font-medium text-muted-foreground">
                     {draftItems.length}
                   </span>
                   {incompleteCount > 0 && (
-                    <button type="button" onClick={focusFirstIncomplete} className="rounded-full bg-primary/15 px-2 py-1 text-[10px] font-bold text-foreground underline underline-offset-2 hover:bg-primary/25" data-testid="button-focus-incomplete-material">
-                      {incompleteCount} do uzupełnienia
-                    </button>
+                    <span className="rounded-full bg-primary/15 px-2 py-1 text-[10px] font-bold text-foreground">
+                      {incompleteCount} do sprawdzenia
+                    </span>
                   )}
                 </div>
                <p className="mt-1 text-sm text-muted-foreground">
-                 Sprawdź wymagane ilości i jednostki.
+                 Sprawdź materiały i ilości. Źródło oraz obliczenie znajdziesz przy pozycji.
                </p>
               </div>
             </div>
@@ -683,10 +698,10 @@ export default function ComparisonScopeWorkspace({
                   <FolderOpen size={22} strokeWidth={1.7} />
                 </div>
                 <h3 className="mt-4 font-display text-lg font-bold tracking-[-0.02em]">
-                   Lista materiałów nie ma jeszcze pozycji
+                   Lista zakupów nie ma jeszcze pozycji
                 </h3>
                 <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                   Dodaj pierwszą pozycję ręcznie albo wczytaj ją z pliku.
+                    Dodaj pierwszą pozycję ręcznie albo z oferty dostawcy.
                 </p>
                 <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
                   <ActionButton icon={Plus} onClick={onAddItem} kind="primary">
@@ -699,6 +714,39 @@ export default function ComparisonScopeWorkspace({
               </div>
             ) : (
               <div className="mt-5">
+                <div className="mb-3 flex flex-col gap-3 rounded-xl border border-border bg-background/45 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Szukaj materiału…"
+                    aria-label="Szukaj materiału"
+                    className="min-h-11 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    data-testid="input-search-scope-materials"
+                  />
+                  <label className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={onlyIncomplete}
+                      onChange={(event) => setOnlyIncomplete(event.target.checked)}
+                      className="size-4 accent-primary"
+                      data-testid="checkbox-filter-scope-incomplete"
+                    />
+                    <span>Do sprawdzenia</span>
+                    <span className="font-mono text-xs text-muted-foreground">({incompleteCount})</span>
+                  </label>
+                </div>
+                {visibleItems.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground" role="status">
+                    <p>{searchTerm || onlyIncomplete ? 'Brak pozycji pasujących do wyszukiwania lub filtra.' : 'Lista zakupów nie ma jeszcze pozycji.'}</p>
+                    {(searchTerm || onlyIncomplete) && (
+                      <button type="button" onClick={() => { setSearch(''); setOnlyIncomplete(false); }} className="mt-2 min-h-11 px-3 font-semibold text-accent underline underline-offset-2">
+                        Wyczyść wyszukiwanie i filtr
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
                 <div
                   className="hidden max-w-full overflow-x-auto overscroll-x-contain rounded-2xl border border-border bg-background/45 md:block"
                   role="region"
@@ -725,8 +773,8 @@ export default function ComparisonScopeWorkspace({
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="px-4">
-                      {draftItems.map((item) => (
+                    <tbody id="comparison-scope-items" className="px-4">
+                      {visibleItems.map((item) => (
                         <ItemRow
                           key={item.id}
                           item={item}
@@ -739,8 +787,8 @@ export default function ComparisonScopeWorkspace({
                     </tbody>
                   </table>
                 </div>
-      <div className="grid min-w-0 gap-3 md:hidden">
-                  {draftItems.map((item) => (
+                    <div className="grid min-w-0 gap-3 md:hidden">
+                  {visibleItems.map((item) => (
                     <MobileItemCard
                       key={item.id}
                       item={item}
@@ -750,7 +798,9 @@ export default function ComparisonScopeWorkspace({
                       onOpenDocument={onOpenDocument}
                     />
                   ))}
-                </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
             <ProjectDocumentationSections
@@ -769,7 +819,7 @@ export default function ComparisonScopeWorkspace({
             <div className="rounded-2xl border border-border bg-secondary/45 p-4">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
                 <FilePlus2 size={15} />
-                {scope.name || 'Lista materiałów'}
+                 {scope.name || 'Lista zakupów'}
               </div>
               {scope.description && (
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">
@@ -814,13 +864,16 @@ export default function ComparisonScopeWorkspace({
             ) : (
               <>
                 <Check size={15} className="text-accent" />
-                <span className="text-muted-foreground">
-                  Wszystkie zmiany są zapisane
-                </span>
+                <span className="text-muted-foreground">{saveConfirmed ? 'Lista zapisana.' : 'Wszystkie zmiany są zapisane'}</span>
               </>
             )}
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            {saveConfirmed && nextStepHref && (
+              <Link href={nextStepHref} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-accent/35 bg-accent/5 px-3.5 text-sm font-bold text-accent hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" data-testid="link-saved-scope-next-step">
+                Dodaj oferty
+              </Link>
+            )}
             <ActionButton icon={X} kind="quiet" onClick={onCancel}>
               Anuluj
             </ActionButton>

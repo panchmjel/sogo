@@ -10,6 +10,7 @@ import {
 } from '@/lib/api';
 import { isApiConfigured, isAuthConfigured } from '@/lib/config';
 import { withPurchaseAreaQueryKey } from '@/lib/project-area-context';
+import { DocumentTypeSelect } from './document-type-select';
 
 export async function refreshProjectDocumentQueries(
   queryClient: QueryClient,
@@ -210,26 +211,31 @@ export function ProjectDocumentLibraryPicker({
                 const failure = failures[document.documentId];
                 return (
                   <li key={document.documentId} className="p-3 sm:p-4">
-                    <label className={`flex items-start gap-3 ${alreadyAssigned ? 'cursor-not-allowed opacity-65' : 'cursor-pointer'}`}>
-                      <input
-                        type="checkbox"
-                        checked={alreadyAssigned || selected}
-                        disabled={alreadyAssigned || isAssigning}
-                        onChange={() => toggleDocument(document)}
-                        className="mt-1 h-4 w-4 accent-primary"
-                        data-testid={`checkbox-library-document-${document.documentId}`}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-words text-sm font-bold">{document.filename}</span>
-                        <span className="mt-1 block text-xs text-muted-foreground">{documentDate(document.createdAt)}</span>
-                        {failure && <span className="mt-2 block text-xs leading-5 text-destructive" role="alert">{failure}</span>}
-                      </span>
-                      {alreadyAssigned ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[10px] font-bold text-muted-foreground"><Check size={12} /> Już dodano</span>
-                      ) : failure ? (
-                        <span className="shrink-0 text-[10px] font-bold text-destructive">Do ponowienia</span>
-                      ) : null}
-                    </label>
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
+                      <label className={`flex min-w-0 flex-1 items-start gap-3 ${alreadyAssigned ? 'cursor-not-allowed opacity-65' : 'cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          checked={alreadyAssigned || selected}
+                          disabled={alreadyAssigned || isAssigning}
+                          onChange={() => toggleDocument(document)}
+                          className="mt-1 h-4 w-4 accent-primary"
+                          data-testid={`checkbox-library-document-${document.documentId}`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words text-sm font-bold">{document.filename}</span>
+                          <span className="mt-1 block text-xs text-muted-foreground">{documentDate(document.createdAt)}</span>
+                          {failure && <span className="mt-2 block text-xs leading-5 text-destructive" role="alert">{failure}</span>}
+                        </span>
+                        {alreadyAssigned ? (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[10px] font-bold text-muted-foreground"><Check size={12} /> Już dodano</span>
+                        ) : failure ? (
+                          <span className="shrink-0 text-[10px] font-bold text-destructive">Do ponowienia</span>
+                        ) : null}
+                      </label>
+                      <div className="w-full min-w-0 sm:max-w-[190px]">
+                        <DocumentTypeSelect projectId={projectId} purchaseAreaId={null} document={document} />
+                      </div>
+                    </div>
                   </li>
                 );
               })}

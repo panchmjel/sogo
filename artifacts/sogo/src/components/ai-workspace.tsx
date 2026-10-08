@@ -36,6 +36,7 @@ import {
   type SogoDocument,
 } from '@/lib/api';
 import { displayAnalysisValue } from '@/lib/analysis-display';
+import { isOfferResultDocument } from '@/lib/document-types';
 import { displayAiCitation, displayComparisonAmount } from '@/lib/ai-display';
 import { classifyComparisonResult, commonSubtotalAmount, comparisonVat, formatComparisonMoney, isScopeVersionConflict, scopeAmount, scopeCoverageLabel, scopeStatusClass, scopeStatusLabel } from '@/lib/scope-comparison-display';
 import { ApiNotConfiguredError, ApiRequestError } from '@/lib/api';
@@ -50,7 +51,7 @@ function cx(...classes: Array<string | false | undefined>) {
 }
 
 function isEligibleDocument(document: SogoDocument) {
-  return document.status === 'UPLOADED' && document.analysisStatus === 'NEEDS_REVIEW' && document.filename.toLowerCase().endsWith('.pdf');
+  return isOfferResultDocument(document);
 }
 
 function jobStatusLabel(status: AIJobStatus) {

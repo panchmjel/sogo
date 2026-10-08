@@ -111,7 +111,7 @@ function downloadExportFile(payload: { fileName: string; contentType: string; ba
   }, 0);
 }
 
-function ComparisonExportButton({
+export function ComparisonExportButton({
   projectId,
   jobId,
   enabled,
@@ -293,7 +293,7 @@ function confirmDraftNavigation(projectId: string, jobId: string, event: { preve
 
 function ConfigurationState() {
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/70 p-10 text-center">
+    <div className="w-full min-w-0 rounded-2xl border border-dashed border-border bg-card/70 p-10 text-center">
       <CircleAlert size={28} className="mx-auto text-muted-foreground/60" />
       <h2 className="mt-4 font-display text-lg font-bold">Porównania są niedostępne</h2>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Zaloguj się i skonfiguruj backend, aby pobrać zapisaną historię porównań.</p>
@@ -303,28 +303,59 @@ function ConfigurationState() {
 
 function HistoryRetry({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-sm">
+    <div className="w-full min-w-0 rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-sm">
       <div className="flex items-start gap-3 text-destructive"><CircleAlert size={18} className="mt-0.5 shrink-0" /><div><p className="font-bold">Nie udało się pobrać historii.</p><p className="mt-1 leading-6">{message}</p></div></div>
       <button type="button" onClick={onRetry} className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-destructive/30 px-3 text-xs font-bold text-destructive"><RefreshCw size={14} /> Spróbuj ponownie</button>
     </div>
   );
 }
 
-function ComparisonHistoryRow({ job, documentsById, purchaseAreaId }: { job: AIJob; documentsById: Map<string, SogoDocument>; purchaseAreaId?: string | null }) {
+function ComparisonHistoryRow({
+  job,
+  documentsById,
+  purchaseAreaId,
+  embedded,
+  onSelectJob,
+  selectedJobId,
+}: {
+  job: AIJob;
+  documentsById: Map<string, SogoDocument>;
+  purchaseAreaId?: string | null;
+  embedded: boolean;
+  onSelectJob?: (job: AIJob) => void;
+  selectedJobId?: string | null;
+}) {
   const [left, right] = offerNames(job, documentsById);
+  const selected = selectedJobId === job.jobId;
   return (
     <Link
       href={`${projectAreaPath(job.projectId, purchaseAreaId, `comparisons/${job.jobId}`)}?section=summary`}
-      className="grid gap-2 border-t border-border px-4 py-4 transition hover:bg-secondary/35 focus-visible:bg-secondary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary md:grid-cols-[minmax(0,1.4fr)_minmax(150px,0.8fr)_minmax(145px,0.75fr)_minmax(175px,0.8fr)] md:items-center"
+      onClick={(event) => {
+        if (!onSelectJob || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onSelectJob(job);
+      }}
+      className={cx(
+        'grid w-full min-w-0 gap-2 border-t border-border px-4 py-4 transition hover:bg-secondary/35 focus-visible:bg-secondary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
+        selected && 'border-l-2 border-l-primary bg-primary/[0.04]',
+        embedded
+          ? 'grid-cols-[minmax(0,1fr)_auto] items-center'
+          : 'md:grid-cols-[minmax(0,1.4fr)_minmax(150px,0.8fr)_minmax(145px,0.75fr)_minmax(175px,0.8fr)] md:items-center',
+      )}
+      aria-current={selected ? 'true' : undefined}
       data-testid={`link-comparison-${job.jobId}`}
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{left} <span className="text-muted-foreground">↔</span> {right}</p>
-        <p className="mt-1 truncate text-xs text-muted-foreground">{comparisonScopeLabel(job)}</p>
+        {embedded ? (
+          <p className="mt-1 truncate text-xs text-muted-foreground">{comparisonScopeLabel(job)} <span aria-hidden="true">·</span> {formatDate(job.createdAt)}</p>
+        ) : (
+          <p className="mt-1 truncate text-xs text-muted-foreground">{comparisonScopeLabel(job)}</p>
+        )}
       </div>
-      <p className="text-xs text-muted-foreground">{comparisonScopeLabel(job)}</p>
-      <p className="text-xs text-muted-foreground">{formatDate(job.createdAt)}</p>
-      <span className={cx('inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold', statusClass(job.status))}>
+      {!embedded && <p className="min-w-0 truncate text-xs text-muted-foreground">{comparisonScopeLabel(job)}</p>}
+      {!embedded && <p className="min-w-0 truncate text-xs text-muted-foreground">{formatDate(job.createdAt)}</p>}
+      <span className={cx('inline-flex w-fit max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold', statusClass(job.status))}>
         {job.status === 'DONE' && <CheckCircle2 size={12} />}
         {statusLabel(job.status)}
       </span>
@@ -332,7 +363,17 @@ function ComparisonHistoryRow({ job, documentsById, purchaseAreaId }: { job: AIJ
   );
 }
 
-export function ComparisonsHistoryPage() {
+export function ComparisonsHistoryPage({
+  embedded = false,
+  onSelectJob,
+  selectedJobId,
+  showCreateLink = true,
+}: {
+  embedded?: boolean;
+  onSelectJob?: (job: AIJob) => void;
+  selectedJobId?: string | null;
+  showCreateLink?: boolean;
+} = {}) {
   const { projectId = 'nieznany' } = useParams<{ projectId: string }>();
   const { purchaseAreaId } = useProjectArea();
   const jobsQuery = usePagedComparisonJobs(projectId, purchaseAreaId);
@@ -343,27 +384,34 @@ export function ComparisonsHistoryPage() {
   );
   const isLoading = jobsQuery.isPending || documentsQuery.isPending;
   const partialError = jobsQuery.isError && jobsQuery.jobs.length > 0;
+  const showCreateAction = isLoading || jobsQuery.isError || jobsQuery.jobs.length > 0;
 
   if (!isApiConfigured() || !isAuthConfigured()) {
-    return <div className="mx-auto max-w-[1400px] p-5 md:p-8 lg:p-10"><ConfigurationState /></div>;
+    return <div className={embedded ? 'w-full min-w-0 p-3 sm:p-4' : 'mx-auto w-full max-w-[1400px] p-5 md:p-8 lg:p-10'}><ConfigurationState /></div>;
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] p-5 md:p-8 lg:p-10">
-      <div className="flex flex-col justify-between gap-5 border-b border-border pb-7 md:flex-row md:items-end">
-        <div><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent">03 / ZAKUP</p><h1 className="mt-2 font-display text-3xl font-bold tracking-[-0.045em]">Porównania</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Zapisane wyniki, statusy zadań i decyzje wymagające sprawdzenia.</p></div>
-         <Link href={`${projectAreaPath(projectId, purchaseAreaId, 'comparisons/new')}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground" data-testid="link-new-comparison"><Plus size={16} /> Nowe porównanie</Link>
-      </div>
-      <div className="mt-8">
+    <div className={embedded ? 'flex h-full min-h-0 w-full min-w-0 flex-col p-3 sm:p-4' : 'mx-auto w-full max-w-[1400px] p-5 md:p-8 lg:p-10'}>
+      {embedded ? (
+        showCreateLink && showCreateAction ? <div className="flex w-full min-w-0 shrink-0 justify-end border-b border-border/70 pb-3">
+          <Link href={projectAreaPath(projectId, purchaseAreaId, 'comparisons/new')} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground" data-testid="link-new-comparison"><Plus size={14} /> Porównaj oferty</Link>
+        </div> : null
+      ) : (
+        <div className="flex flex-col justify-between gap-5 border-b border-border pb-7 md:flex-row md:items-end">
+          <div><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent">03 / ZAKUP</p><h1 className="mt-2 font-display text-3xl font-bold tracking-[-0.045em]">Porównania</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Zapisane wyniki, statusy zadań i decyzje wymagające sprawdzenia.</p></div>
+          {showCreateAction && showCreateLink && <Link href={projectAreaPath(projectId, purchaseAreaId, 'comparisons/new')} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground" data-testid="link-new-comparison"><Plus size={16} /> Porównaj oferty</Link>}
+        </div>
+      )}
+      <div className={embedded ? 'min-h-0 w-full min-w-0 flex-1 overflow-y-auto pt-3' : 'mt-8 w-full min-w-0'}>
         {isLoading ? <div className="rounded-2xl border border-border bg-card/70 p-8 text-sm text-muted-foreground"><LoaderCircle size={17} className="mr-2 inline animate-spin" /> Wczytywanie historii</div> :
           jobsQuery.isError && !jobsQuery.jobs.length ? <HistoryRetry message={apiErrorMessage(jobsQuery.error, 'Sprawdź połączenie i spróbuj ponownie.')} onRetry={() => { void jobsQuery.refetch(); void documentsQuery.refetch(); }} /> :
-          <div className="space-y-3">
+          <div className="w-full min-w-0 space-y-3">
             {partialError && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/10 p-3 text-xs text-primary"><span>Historia jest niepełna — nie udało się pobrać kolejnej strony.</span><button type="button" onClick={() => void jobsQuery.refetch()} className="font-bold underline">Spróbuj ponownie</button></div>}
             {(jobsQuery.isFetchingNextPage || documentsQuery.isFetchingNextPage) && <p className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle size={14} className="animate-spin" /> Wczytywanie historii</p>}
-             {!jobsQuery.jobs.length ? <div className="rounded-2xl border border-dashed border-border bg-card/70 p-10 text-center"><GitCompareArrows size={28} className="mx-auto text-muted-foreground/60" /><h2 className="mt-4 font-display text-lg font-bold">Brak zapisanych porównań</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Utwórz pierwsze porównanie, aby zobaczyć je tutaj.</p><Link href={projectAreaPath(projectId, purchaseAreaId, 'comparisons/new')} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground"><Plus size={15} /> Utwórz pierwsze porównanie</Link></div> :
-              <div className="overflow-hidden rounded-2xl border border-border bg-card/70">
-                <div className="hidden gap-4 bg-secondary/45 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(150px,0.8fr)_minmax(145px,0.75fr)_minmax(175px,0.8fr)]"><span>Oferty</span><span>Lista materiałów</span><span>Utworzono</span><span>Status</span></div>
-                 <div>{jobsQuery.jobs.map((job) => <ComparisonHistoryRow key={job.jobId} job={job} documentsById={documentsById} purchaseAreaId={purchaseAreaId} />)}</div>
+              {!jobsQuery.jobs.length ? <div className={`w-full min-w-0 rounded-2xl border border-dashed border-border bg-card/70 text-center ${embedded ? 'p-5' : 'p-10'}`}><GitCompareArrows size={28} className="mx-auto text-muted-foreground/60" /><h2 className="mt-4 font-display text-lg font-bold">Brak zapisanych porównań</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{embedded ? 'Zapisane porównania pojawią się tutaj.' : 'Utwórz pierwsze porównanie, aby zobaczyć je tutaj.'}</p>{showCreateLink && <Link href={projectAreaPath(projectId, purchaseAreaId, 'comparisons/new')} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground"><Plus size={15} /> Porównaj oferty</Link>}</div> :
+              <div className="w-full min-w-0 overflow-hidden rounded-2xl border border-border bg-card/70">
+                {!embedded && <div className="hidden gap-4 bg-secondary/45 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(150px,0.8fr)_minmax(145px,0.75fr)_minmax(175px,0.8fr)]"><span>Oferty</span><span>Lista materiałów</span><span>Utworzono</span><span>Status</span></div>}
+                  <div className="w-full min-w-0">{jobsQuery.jobs.map((job) => <ComparisonHistoryRow key={job.jobId} job={job} documentsById={documentsById} purchaseAreaId={purchaseAreaId} embedded={embedded} onSelectJob={onSelectJob} selectedJobId={selectedJobId} />)}</div>
               </div>}
           </div>}
       </div>
@@ -478,6 +526,7 @@ export function ComparisonDetailPage() {
 
   return (
     <div className="mx-auto max-w-[1400px] p-5 md:p-8 lg:p-10">
+       <Link href={projectAreaPath(projectId, purchaseAreaId, 'scope')} className="mb-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground" data-testid="link-comparison-return-to-thread"><ArrowLeft size={14} /> Wróć do rozmowy</Link>
        <DetailHeader
          job={job}
          supplierNames={supplierNames}
@@ -509,5 +558,14 @@ export function ComparisonDetailPage() {
 }
 
 export function ComparisonsNewPage() {
-  return <CompareOffersPage />;
+  const { projectId = 'nieznany' } = useParams<{ projectId: string }>();
+  const { purchaseAreaId } = useProjectArea();
+  return (
+    <>
+      <div className="mx-auto max-w-[1400px] px-5 pt-4 md:px-8 lg:px-10">
+        <Link href={projectAreaPath(projectId, purchaseAreaId, 'scope')} className="inline-flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground" data-testid="link-comparison-return-to-thread"><ArrowLeft size={14} /> Wróć do rozmowy</Link>
+      </div>
+      <CompareOffersPage />
+    </>
+  );
 }

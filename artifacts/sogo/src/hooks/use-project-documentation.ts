@@ -9,7 +9,6 @@ import {
   getProjectDocumentationJob,
   listAIJobs,
   listProjectDocuments,
-  uploadDocument,
   type AIJob,
   type ComparisonScope,
   type DocumentationMode,
@@ -18,7 +17,7 @@ import {
   type SogoDocument,
 } from '@/lib/api';
 import { isApiConfigured, isAuthConfigured } from '@/lib/config';
-import { getProjectDocumentationFileError } from '@/lib/project-documentation-files';
+import { canPrepareMaterials } from '@/lib/document-types';
 import {
   isProjectDocumentationJobActive,
   isProjectDocumentationMergeFailed,
@@ -195,7 +194,6 @@ export function useProjectDocumentation({
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [applyError, setApplyError] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
   const [isPreparingScope, setIsPreparingScope] = useState(false);
   const [manualJobStatus, setManualJobStatus] = useState<AIJob | null>(null);
   const [applyVersionOverride, setApplyVersionOverride] = useState<number | null>(null);
@@ -220,7 +218,7 @@ export function useProjectDocumentation({
     enabled: open && contextIsHydrated && isApiConfigured() && isAuthConfigured(),
     retry: false,
   });
-  const projectDocuments = documentsQuery.data ?? [];
+  const projectDocuments = (documentsQuery.data ?? []).filter(canPrepareMaterials);
   const recoveryQuery = useQuery({
     queryKey: ['project-documentation-job-recovery', authUserId, projectId, purchaseAreaId],
     queryFn: ({ signal }) => listAIJobs(projectId, purchaseAreaId, signal),
@@ -258,7 +256,7 @@ export function useProjectDocumentation({
     processedAppliedJobRef.current = null;
 
     if (!storageKey) {
-      setDocumentationName(`${scopeRef.current?.name ?? areaName} — materiały`);
+      setDocumentationName(scopeRef.current?.name ?? areaName);
       setPurchaseRules(scopeRef.current?.purchaseRules ?? []);
       setHydratedContextKey(contextKey);
       return;
@@ -277,7 +275,7 @@ export function useProjectDocumentation({
         setPurchaseRules(restoredDraft.purchaseRules);
         setSelectedDocumentIds(restoredDraft.documentIds.slice(0, 12));
       } else {
-        setDocumentationName(`${scopeRef.current?.name ?? areaName} — materiały`);
+        setDocumentationName(scopeRef.current?.name ?? areaName);
         setPurchaseRules(scopeRef.current?.purchaseRules ?? []);
       }
       hydratedDraftContextRef.current = contextKey;
@@ -306,7 +304,7 @@ export function useProjectDocumentation({
         setStoredJob({
           request: {
             requestId: crypto.randomUUID(),
-            name: draft?.name ?? scopeRef.current?.name ?? `${areaName} — materiały`,
+            name: draft?.name ?? scopeRef.current?.name ?? areaName,
             description: draft?.description ?? '',
             purchaseRules: draft?.purchaseRules ?? scopeRef.current?.purchaseRules ?? [],
             documentIds: draft?.documentIds ?? [],
@@ -354,7 +352,7 @@ export function useProjectDocumentation({
 
   useEffect(() => {
     if (hydratedDraftContextRef.current !== contextKey || formTouchedRef.current || storedJob) return;
-    setDocumentationName(scope?.name ?? `${areaName} — materiały`);
+    setDocumentationName(scope?.name ?? areaName);
     setPurchaseRules(scope?.purchaseRules ?? []);
   }, [areaName, contextKey, scope?.name, scope?.purchaseRules, scope?.version, storedJob]);
 
@@ -545,8 +543,12 @@ export function useProjectDocumentation({
     });
   }, [contextKey, jobQuery.data?.job, syncScope]);
 
-  const openPanel = useCallback(() => {
+  const openPanel = useCallback((preselectedDocumentIds: string[] = []) => {
     if (!storedJob) setError('');
+    if (preselectedDocumentIds.length > 0) {
+      formTouchedRef.current = true;
+      setSelectedDocumentIds((current) => [...new Set([...current, ...preselectedDocumentIds])].slice(0, 12));
+    }
     setOpen(true);
   }, [storedJob]);
 
@@ -595,16 +597,17 @@ export function useProjectDocumentation({
       return;
     }
 
-    const scopeDocumentIds = new Set(scopeDocuments.map((document) => document.documentId));
+    const eligibleScopeDocuments = scopeDocuments.filter(canPrepareMaterials);
+    const scopeDocumentIds = new Set(eligibleScopeDocuments.map((document) => document.documentId));
     const documentsById = new Map(
-      [...scopeDocuments, ...projectDocuments].map((document) => [document.documentId, document]),
+      [...eligibleScopeDocuments, ...projectDocuments].map((document) => [document.documentId, document]),
     );
     const missingOrPending = request.documentIds.filter((documentId) => {
       const document = documentsById.get(documentId);
-      return !document || document.status !== 'UPLOADED';
+      return !document || !canPrepareMaterials(document);
     });
     if (missingOrPending.length > 0) {
-      setError('Część wybranych dokumentów nie jest jeszcze gotowa. Odśwież listę i wybierz tylko pliki ze statusem UPLOADED.');
+      setError('Wybierz tylko wgrane dokumenty typu „Dokumentacja projektowa” lub „Korespondencja”, które można przygotować do listy materiałów.');
       return;
     }
 
@@ -757,65 +760,6 @@ export function useProjectDocumentation({
     });
   }, [applyMutation, applyVersionOverride, contextKey, jobQuery.data?.result, projectId, purchaseAreaId, scope?.version, storageKey, storedJob]);
 
-  const addFiles = useCallback(async (input: FileList | File[]) => {
-    const files = Array.from(input);
-    if (files.length === 0) return;
-    formTouchedRef.current = true;
-    const capacity = 12 - selectedDocumentIds.length;
-    if (files.length > capacity) {
-      setError(`Możesz wybrać jeszcze ${Math.max(0, capacity)} ${capacity === 1 ? 'plik' : 'plików'} (maksymalnie 12 łącznie).`);
-      return;
-    }
-    const seenDocuments = new Set(
-      [...scopeDocuments, ...projectDocuments].map((document) => `${document.filename}:${document.size}`),
-    );
-    const filesToUpload: File[] = [];
-    const duplicates: string[] = [];
-    for (const file of files) {
-      const key = `${file.name}:${file.size}`;
-      if (seenDocuments.has(key)) duplicates.push(file.name);
-      else {
-        seenDocuments.add(key);
-        filesToUpload.push(file);
-      }
-    }
-    if (filesToUpload.length === 0) {
-      setError(`Te dokumenty są już w bibliotece projektu: ${duplicates.join(', ')}.`);
-      return;
-    }
-    const validation = await Promise.all(filesToUpload.map(async (file) => ({
-      file,
-      message: await getProjectDocumentationFileError(file),
-    })));
-    const invalid = validation.filter((entry) => entry.message);
-    if (invalid.length > 0) {
-      setError(invalid.map((entry) => `${entry.file.name}: ${entry.message}`).join(' '));
-      return;
-    }
-    setError(duplicates.length > 0 ? `Pominięto dokumenty już obecne w bibliotece: ${duplicates.join(', ')}.` : '');
-    setIsUploading(true);
-    const settled = await Promise.allSettled(
-      filesToUpload.map((file) => uploadDocument(projectId, file, purchaseAreaId)),
-    );
-    const uploaded = settled
-      .filter((entry): entry is PromiseFulfilledResult<SogoDocument> => entry.status === 'fulfilled')
-      .map((entry) => entry.value)
-      .filter((document) => document.status === 'UPLOADED');
-    const failedNames = settled.flatMap((entry, index) =>
-      entry.status === 'rejected' || (entry.status === 'fulfilled' && entry.value.status !== 'UPLOADED')
-        ? [filesToUpload[index].name]
-        : [],
-    );
-    if (uploaded.length > 0) {
-      setSelectedDocumentIds((current) => [...new Set([...current, ...uploaded.map((document) => document.documentId)])].slice(0, 12));
-    }
-    if (failedNames.length > 0) {
-      setError(`Nie udało się przygotować plików: ${failedNames.join(', ')}. Sprawdź stan dokumentów i ponów upload tych plików.`);
-    }
-    setIsUploading(false);
-    await refreshDocuments();
-  }, [projectDocuments, projectId, purchaseAreaId, refreshDocuments, scopeDocuments, selectedDocumentIds.length]);
-
   const toggleDocument = useCallback((documentId: string) => {
     setError('');
     setSelectedDocumentIds((current) => {
@@ -824,15 +768,15 @@ export function useProjectDocumentation({
         setError('Możesz wybrać maksymalnie 12 dokumentów.');
         return current;
       }
-      const document = [...(documentsQuery.data ?? []), ...projectDocuments]
+      const document = [...scopeDocuments, ...projectDocuments]
         .find((entry) => entry.documentId === documentId);
-      if (!document || document.status !== 'UPLOADED') {
-        setError('Można wybrać tylko dokumenty o statusie UPLOADED.');
+      if (!document || !canPrepareMaterials(document)) {
+        setError('Można wybrać tylko wgrane dokumenty typu „Dokumentacja projektowa” lub „Korespondencja”.');
         return current;
       }
       return [...current, documentId];
     });
-  }, [documentsQuery.data, projectDocuments]);
+  }, [projectDocuments, scopeDocuments]);
 
   const removeDocument = useCallback((documentId: string) => {
     formTouchedRef.current = true;
@@ -871,7 +815,6 @@ export function useProjectDocumentation({
     && !hasUnsavedChanges
     && !startMutation.isPending
     && !applyMutationPending
-    && !isUploading
     && !isPreparingScope
     && !startMutation.isPending
     && !documentsQuery.isPending
@@ -907,7 +850,7 @@ export function useProjectDocumentation({
     setPreparationRequest('');
     setPurchaseRules(scope?.purchaseRules ?? []);
     setMode('append');
-    setDocumentationName(scope?.name ?? `${areaName} — materiały`);
+    setDocumentationName(scope?.name ?? areaName);
     formTouchedRef.current = false;
     if (draftStorageKey) {
       try {
@@ -957,13 +900,12 @@ export function useProjectDocumentation({
     selectedDocumentIds,
     toggleDocument: toggleDocumentSelection,
     removeDocument,
-    addFiles,
     projectDocuments,
     projectDocumentsError: documentsQuery.isError
       ? errorMessage(documentsQuery.error, 'Nie udało się pobrać dokumentów z biblioteki projektu.')
       : '',
     isProjectDocumentsLoading: documentsQuery.isPending,
-    isUploading,
+    isUploading: false,
     isPreparing: isPreparingScope || startMutation.isPending,
     isApplying: applyMutation.isPending,
     canPrepare,

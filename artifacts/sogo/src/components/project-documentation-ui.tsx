@@ -120,6 +120,7 @@ export type ProjectDocumentationTriggerProps = {
   onOpen: () => void;
   disabled?: boolean;
   className?: string;
+  label?: string;
 };
 
 export type ProjectDocumentationPanelProps = {
@@ -133,7 +134,6 @@ export type ProjectDocumentationPanelProps = {
   onFilesAdded: (files: File[] | FileList) => void;
   onPasteContent?: (text: string) => void;
   documentationName: string;
-  onDocumentationNameChange: (name: string) => void;
   preparationRequest: string;
   onPreparationRequestChange: (request: string) => void;
   mode: DocumentationMode;
@@ -292,6 +292,7 @@ export function ProjectDocumentationTrigger({
   onOpen,
   disabled = false,
   className,
+  label = 'Przygotuj z dokumentacji',
 }: ProjectDocumentationTriggerProps) {
   return (
     <div className={cn('min-w-0', className)}>
@@ -303,10 +304,10 @@ export function ProjectDocumentationTrigger({
         testId="button-prepare-from-documentation"
         className="w-full sm:w-auto"
       >
-        Przygotuj z dokumentacji
+        {label}
       </Button>
       <p className="mt-2 max-w-md text-xs leading-5 text-muted-foreground">
-        Dodaj projekt, opis techniczny lub zestawienie. Przygotujemy materiały i wskażemy, co wymaga wyjaśnienia.
+        Dodaj dokumenty, aby przygotować listę materiałów do sprawdzenia.
       </p>
     </div>
   );
@@ -731,7 +732,6 @@ export function ProjectDocumentationPanel({
   onFilesAdded,
   onPasteContent,
   documentationName,
-  onDocumentationNameChange,
   preparationRequest,
   onPreparationRequestChange,
   onPrepare,
@@ -781,15 +781,14 @@ export function ProjectDocumentationPanel({
   return (
     <main className="mx-auto w-full max-w-[1120px] min-w-0 px-4 py-5 sm:px-6 sm:py-8" data-testid="documentation-panel">
       <header className="sogo-rise rounded-[22px] border border-border bg-card/90 p-5 shadow-sm sm:p-7">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">MATERIAŁY / DOKUMENTACJA</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">DO KUPIENIA</p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 id="documentation-panel-title" className="font-display text-3xl font-bold tracking-[-0.05em] sm:text-4xl">Utwórz listę z dokumentacji</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Dodaj projekt i warunki techniczne. Przygotujemy materiały i ilości potrzebne do zebrania ofert.</p>
+            <h1 id="documentation-panel-title" className="font-display text-2xl font-bold tracking-[-0.04em] sm:text-3xl">{scopeItemCount > 0 ? 'Uzupełnij listę z dokumentacji' : 'Dodaj dokumentację i opisz zakupy'}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Wynik sprawdzisz na liście zakupów przed jego zapisaniem.</p>
           </div>
-          <button type="button" onClick={onClose} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" aria-label="Wróć do listy materiałów" data-testid="button-close-documentation-panel"><X size={16} /> Wróć</button>
+          <button type="button" onClick={onClose} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" aria-label="Wróć do listy zakupów" data-testid="button-close-documentation-panel"><X size={16} /> Wróć</button>
         </div>
-        <p className="mt-5 max-w-3xl rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs leading-5 text-foreground/80">Wynikiem będzie tabela materiałów z ilościami i wskazaniem źródeł. To nie jest kosztorys ani wiadomość do dostawcy.</p>
       </header>
 
       {result && isApplied ? (
@@ -810,8 +809,7 @@ export function ProjectDocumentationPanel({
               <section className="rounded-2xl border border-border bg-card/80 p-4 sm:p-5" aria-labelledby="documentation-files-title">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">01 / PLIKI ŹRÓDŁOWE</p>
-                    <h2 id="documentation-files-title" className="mt-1 font-display text-xl font-bold tracking-[-0.03em]">Wybierz dokumenty do odczytu</h2>
+                    <h2 id="documentation-files-title" className="font-display text-lg font-bold tracking-[-0.03em]">Dodaj dokumenty</h2>
                   </div>
                   <span className="rounded-full bg-secondary px-3 py-1.5 font-mono text-xs text-muted-foreground">{selectedDocumentIds.length} / {maxFiles} wybranych</span>
                 </div>
@@ -827,42 +825,38 @@ export function ProjectDocumentationPanel({
                 )}
               </section>
               <section className="rounded-2xl border border-border bg-card/80 p-4 sm:p-5" aria-labelledby="documentation-request-title">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">02 / ZAKRES ZAKUPU</p>
-                <h2 id="documentation-request-title" className="mt-1 font-display text-xl font-bold tracking-[-0.03em]">Co kupujemy?</h2>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">Podaj nazwę listy i opisz, czego szukać w dokumentacji.</p>
-                <label className="mt-4 block">
-                  <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Nazwa listy materiałów</span>
-                  <input value={documentationName} onChange={(event) => onDocumentationNameChange(event.target.value)} maxLength={160} placeholder="Nazwa zakresu zakupowego" className="mt-2 min-h-11 w-full rounded-xl border border-input bg-background px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/55 focus:border-primary focus:ring-2 focus:ring-primary/20" data-testid="input-documentation-name" />
-                </label>
-                <label className="mt-4 block">
-                  <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Opis zadania</span>
-                  <textarea value={preparationRequest} onChange={(event) => onPreparationRequestChange(event.target.value)} maxLength={4000} rows={4} placeholder="Opisz zakres robót lub elementy, dla których potrzebujesz materiałów." className="mt-2 min-h-[112px] w-full resize-y rounded-xl border border-input bg-background px-3.5 py-3 text-sm leading-6 outline-none placeholder:text-muted-foreground/55 focus:border-primary focus:ring-2 focus:ring-primary/20" data-testid="input-documentation-request" />
+                <h2 id="documentation-request-title" className="font-display text-lg font-bold tracking-[-0.03em]">Opisz, co uwzględnić</h2>
+                <label className="mt-3 block">
+                  <span className="sr-only">Opisz, co uwzględnić</span>
+                  <textarea value={preparationRequest} onChange={(event) => onPreparationRequestChange(event.target.value)} maxLength={4000} rows={4} required placeholder="Np. Sieć wodociągowa, bez przyłączy. Przy różnicach między rysunkami a warunkami technicznymi stosuj warunki techniczne." className="min-h-[112px] w-full resize-y rounded-xl border border-input bg-background px-3.5 py-3 text-sm leading-6 outline-none placeholder:text-muted-foreground/55 focus:border-primary focus:ring-2 focus:ring-primary/20" data-testid="input-documentation-request" />
                   <span className="mt-1 block text-right font-mono text-[10px] text-muted-foreground">{preparationRequest.length}/4000</span>
                 </label>
-                <div className="mt-5">
+                <details className="mt-4 rounded-xl border border-border bg-background/45 p-3">
+                  <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold">
+                    Ustalenia do zakupów
+                    {shownPurchaseRules.some((rule) => rule.trim().length > 0) && <span className="ml-2 text-xs font-normal text-muted-foreground">{shownPurchaseRules.filter((rule) => rule.trim()).length} zapisane</span>}
+                  </summary>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div><h3 className="text-sm font-bold">Warunki zakupowe</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Doprecyzuj, co uwzględnić przy kompletowaniu materiałów.</p></div>
-                    <Button icon={Plus} onClick={addPurchaseRule} testId="button-add-purchase-rule">Dodaj warunek</Button>
+                    <p className="text-xs leading-5 text-muted-foreground">Opcjonalne wytyczne, które mają pozostać przy tej liście.</p>
+                    <Button icon={Plus} onClick={addPurchaseRule} testId="button-add-purchase-rule">Dodaj ustalenie</Button>
                   </div>
                   <div className="mt-3 grid gap-2">
                     {shownPurchaseRules.map((rule, index) => (
                       <div key={index} className="flex min-w-0 items-start gap-2">
-                        <textarea value={rule} onChange={(event) => changePurchaseRule(index, event.target.value)} rows={2} placeholder={index === 0 ? 'Np. Pomiń przyłącza' : 'Np. Warunki techniczne mają pierwszeństwo przed rysunkami'} className="min-h-11 min-w-0 flex-1 resize-y rounded-xl border border-input bg-background px-3 py-2.5 text-sm leading-5 outline-none placeholder:text-muted-foreground/55 focus:border-primary focus:ring-2 focus:ring-primary/20" aria-label={`Warunek zakupowy ${index + 1}`} data-testid={`input-purchase-rule-${index}`} />
+                        <textarea value={rule} onChange={(event) => changePurchaseRule(index, event.target.value)} rows={2} placeholder={index === 0 ? 'Np. Pomiń przyłącza' : 'Np. Warunki techniczne mają pierwszeństwo przed rysunkami'} className="min-h-11 min-w-0 flex-1 resize-y rounded-xl border border-input bg-background px-3 py-2.5 text-sm leading-5 outline-none placeholder:text-muted-foreground/55 focus:border-primary focus:ring-2 focus:ring-primary/20" aria-label={`Ustalenie zakupowe ${index + 1}`} data-testid={`input-purchase-rule-${index}`} />
                         <button type="button" onClick={() => removePurchaseRule(index)} className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" aria-label={`Usuń warunek ${index + 1}`} data-testid={`button-remove-purchase-rule-${index}`}><Trash2 size={16} /></button>
                       </div>
                     ))}
                     {shownPurchaseRules.length === 0 && <p className="rounded-xl border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">Nie dodano dodatkowych warunków.</p>}
                   </div>
-                </div>
+                </details>
                 {pasteText && <details className="mt-4 rounded-xl border border-border bg-background/45 p-3"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold">Wklejony opis źródłowy</summary><p className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{pasteText}</p></details>}
               </section>
               {error && <div className="flex items-start gap-3 rounded-xl border border-destructive/25 bg-destructive/10 p-4 text-sm leading-5 text-destructive" role="alert" data-testid="status-documentation-error"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span className="min-w-0 break-words [overflow-wrap:anywhere]">{error}</span>{job?.status !== 'FAILED' && onRetry && <Button icon={RefreshCw} onClick={onRetry} testId="button-retry-documentation-start" className="shrink-0">Ponów</Button>}</div>}
               {job && <GenerationStatus job={job} result={result} onRetry={onRetry} />}
               <section className="rounded-2xl border border-primary/25 bg-primary/5 p-4 sm:p-5">
-                <h2 className="font-display text-lg font-bold">Przed rozpoczęciem</h2>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">Sprawdź wybrane pliki, nazwę listy i opis zadania. Wynik pokażemy do weryfikacji — nic nie zostanie dodane bez Twojego potwierdzenia.</p>
-                <Button icon={isPreparing ? LoaderCircle : Sparkles} iconClassName={isPreparing ? 'animate-spin' : undefined} kind="primary" onClick={onPrepare} disabled={!readyToPrepare} testId="button-start-documentation-generation" className="mt-4 min-h-12 w-full sm:w-auto">{isPreparing ? 'Odczytuję dokumentację…' : 'Utwórz listę z dokumentacji'}</Button>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">Dodaj projekt i warunki techniczne. Przygotujemy materiały i ilości potrzebne do zebrania ofert.</p>
+                <p className="text-sm leading-5 text-muted-foreground">Sprawdź dokumenty i opis. Wynik pokażemy do weryfikacji — nie dodamy go bez potwierdzenia.</p>
+                <Button icon={isPreparing ? LoaderCircle : Sparkles} iconClassName={isPreparing ? 'animate-spin' : undefined} kind="primary" onClick={onPrepare} disabled={!readyToPrepare} testId="button-start-documentation-generation" className="mt-4 min-h-12 w-full sm:w-auto">{isPreparing ? 'Przygotowuję listę…' : scopeItemCount > 0 ? 'Przygotuj propozycję zmian' : 'Utwórz listę zakupów'}</Button>
                 {!canPrepare && <p className="mt-2 text-xs text-destructive" role="status">Przygotowanie jest chwilowo niedostępne.</p>}
               </section>
             </>

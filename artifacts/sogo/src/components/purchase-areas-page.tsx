@@ -34,8 +34,8 @@ function isCreatedArea(
 
 function safeAreaName(value: string) {
   const name = value.trim();
-  if (!name) return 'Podaj nazwę obszaru zakupowego.';
-  if (name.length > 160) return 'Nazwa obszaru zakupowego może mieć maksymalnie 160 znaków.';
+  if (!name) return 'Podaj nazwę tematu zakupów.';
+  if (name.length > 160) return 'Nazwa tematu zakupów może mieć maksymalnie 160 znaków.';
   if (/[\u0000-\u001f\u007f]/.test(name)) return 'Nazwa nie może zawierać znaków kontrolnych.';
   return '';
 }
@@ -45,7 +45,7 @@ function messageForError(error: unknown, fallback: string) {
     return 'Nie masz dostępu do tego projektu.';
   }
   if (error instanceof ApiRequestError && error.status === 404) {
-    return 'Projekt lub obszar zakupowy nie jest już dostępny.';
+    return 'Projekt lub temat zakupów nie jest już dostępny.';
   }
   if (error instanceof Error && error.message) return error.message;
   return fallback;
@@ -102,12 +102,12 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
       setName('');
       setNameError('');
       setCreateError('');
-       setNotice(`Utworzono obszar zakupowy „${area.name}”.`);
+      setNotice(`Utworzono temat zakupów „${area.name}”.`);
       await queryClient.invalidateQueries({ queryKey: key });
-      setLocation(projectAreaPath(projectId, area.purchaseAreaId, 'documents'));
+      setLocation(projectAreaPath(projectId, area.purchaseAreaId, 'scope'));
     },
     onError: (error) => {
-      setCreateError(messageForError(error, 'Nie udało się utworzyć obszaru zakupowego. Możesz ponowić tę samą operację.'));
+      setCreateError(messageForError(error, 'Nie udało się utworzyć tematu zakupów. Możesz ponowić tę samą operację.'));
     },
   });
 
@@ -194,8 +194,8 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
       <header className="flex flex-col justify-between gap-5 border-b border-border pb-7 sm:flex-row sm:items-end">
         <div className="min-w-0">
           <p className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-accent">01 / PROJEKT</p>
-          <h2 className="mt-2 font-display text-2xl font-bold tracking-[-0.04em] md:text-[36px]" data-testid="heading-purchase-areas">Obszary zakupowe</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Podziel zakupy na kontekstowe grupy, np. drogi, kanalizację i pompownię.</p>
+          <h2 className="mt-2 font-display text-2xl font-bold tracking-[-0.04em] md:text-[36px]" data-testid="heading-purchase-areas">Tematy zakupów</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Każdy temat ma własną listę zakupów, dokumenty i porównania ofert.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -210,16 +210,16 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
             className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground hover:bg-primary/90"
             data-testid="link-create-purchase-area"
           >
-            <Plus size={16} /> Dodaj obszar zakupowy
+            <Plus size={16} /> Nowe zakupy
           </a>
         </div>
       </header>
 
-      <section className="mt-7" aria-label="Obszary zakupowe projektu">
-        {areasQuery.isPending && <p className="mb-3 text-xs text-muted-foreground" role="status" data-testid="state-purchase-areas-loading">Pobieranie obszarów zakupowych…</p>}
+      <section className="mt-7" aria-label="Tematy zakupów w projekcie">
+        {areasQuery.isPending && <p className="mb-3 text-xs text-muted-foreground" role="status" data-testid="state-purchase-areas-loading">Pobieranie tematów zakupów…</p>}
         {areasQuery.isError && (
           <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-5" role="alert" data-testid="error-purchase-areas">
-            <p className="font-semibold text-destructive">Nie udało się pobrać obszarów zakupowych</p>
+            <p className="font-semibold text-destructive">Nie udało się pobrać tematów zakupów</p>
             <p className="mt-1 text-sm text-muted-foreground">{messageForError(areasQuery.error, 'Sprawdź połączenie i spróbuj ponownie.')}</p>
             <button type="button" onClick={() => void areasQuery.refetch()} className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-bold" data-testid="button-retry-purchase-areas">
               <RefreshCw size={14} /> Spróbuj ponownie
@@ -229,7 +229,7 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="list-purchase-areas">
           {areas.map((area) => {
               const general = area.isGeneral || area.purchaseAreaId === null;
-              const areaHref = projectAreaPath(projectId, general ? null : area.purchaseAreaId, 'documents');
+              const areaHref = projectAreaPath(projectId, general ? null : area.purchaseAreaId, 'scope');
               const activeRename = !general && renamingId === area.purchaseAreaId;
               const conflictText = area.purchaseAreaId && renameError?.areaId === area.purchaseAreaId
                 ? renameError.message
@@ -241,12 +241,12 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
                       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary text-accent"><Building2 size={18} /></div>
                       <div className="min-w-0">
                         <h3 className="break-words font-display text-lg font-bold" data-testid={`text-purchase-area-name-${area.purchaseAreaId ?? 'general'}`}>{area.name}</h3>
-                        {general && <p className="mt-1 text-xs leading-5 text-muted-foreground">Pliki i porównania bez podziału na obszary zakupowe</p>}
+                        {general && <p className="mt-1 text-xs leading-5 text-muted-foreground">Dokumenty i zakupy bez osobnego tematu</p>}
                       </div>
                     </div>
                     {!general && (
                       <details className="relative shrink-0">
-                        <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-border text-muted-foreground hover:bg-secondary" aria-label={`Opcje obszaru zakupowego ${area.name}`} data-testid={`menu-purchase-area-${area.purchaseAreaId}`}>
+                        <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-border text-muted-foreground hover:bg-secondary" aria-label={`Opcje tematu zakupów ${area.name}`} data-testid={`menu-purchase-area-${area.purchaseAreaId}`}>
                           <Ellipsis size={17} />
                         </summary>
                         <div className="absolute right-0 top-10 z-10 min-w-40 rounded-xl border border-border bg-card p-1 shadow-lg">
@@ -264,7 +264,7 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
                       onSubmit={(event) => { event.preventDefault(); submitRename(area); }}
                       data-testid={`form-rename-purchase-area-${area.purchaseAreaId}`}
                     >
-                       <label className="sr-only" htmlFor={`rename-purchase-area-${area.purchaseAreaId}`}>Nazwa obszaru zakupowego</label>
+                       <label className="sr-only" htmlFor={`rename-purchase-area-${area.purchaseAreaId}`}>Nazwa tematu zakupów</label>
                       <input
                         id={`rename-purchase-area-${area.purchaseAreaId}`}
                         value={renameValue}
@@ -290,7 +290,7 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
                   ) : (
                     <div className="mt-auto pt-5">
                       <Link href={areaHref} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold hover:border-primary/50 hover:bg-primary/5" data-testid={`link-open-purchase-area-${area.purchaseAreaId ?? 'general'}`}>
-                        Otwórz <ArrowRight size={15} />
+                        Do kupienia <ArrowRight size={15} />
                       </Link>
                     </div>
                   )}
@@ -301,10 +301,10 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
       </section>
 
       <section id="create-purchase-area" className="mt-8 rounded-2xl border border-border bg-card/70 p-5 sm:p-6" data-testid="panel-create-purchase-area">
-        <div className="flex items-center gap-2 border-b border-border pb-4"><Plus size={17} className="text-accent" /><h3 className="font-display font-bold">Dodaj obszar zakupowy</h3></div>
+        <div className="flex items-center gap-2 border-b border-border pb-4"><Plus size={17} className="text-accent" /><h3 className="font-display font-bold">Nowe zakupy</h3></div>
         <form onSubmit={submitCreate} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" data-testid="form-create-purchase-area">
           <div className="min-w-0 flex-1">
-            <label htmlFor="input-create-purchase-area" className="mb-2 block text-xs font-semibold text-muted-foreground">Nazwa obszaru zakupowego</label>
+            <label htmlFor="input-create-purchase-area" className="mb-2 block text-xs font-semibold text-muted-foreground">Nazwa tematu</label>
             <input
               id="input-create-purchase-area"
               value={name}
@@ -316,14 +316,14 @@ export function PurchaseAreasPage({ projectId }: { projectId: string }) {
                 setCreateError('');
                 if (createRequest.current?.name !== nextName.trim()) createRequest.current = null;
               }}
-              placeholder="np. Kanalizacja deszczowa"
+              placeholder="np. Wodociąg, kanalizacja, drogi"
               className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               data-testid="input-create-purchase-area"
             />
             {nameError && <p className="mt-1 text-xs text-destructive" role="alert">{nameError}</p>}
           </div>
           <button type="submit" disabled={createMutation.isPending} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-purchase-area">
-            <Plus size={16} />{createMutation.isPending ? 'Tworzenie…' : 'Utwórz obszar zakupowy'}
+            <Plus size={16} />{createMutation.isPending ? 'Tworzenie…' : 'Utwórz temat zakupów'}
           </button>
         </form>
         {createError && <p className="mt-3 flex items-start gap-2 text-sm text-destructive" role="alert" data-testid="error-create-purchase-area"><TriangleAlert size={16} className="mt-0.5 shrink-0" />{createError}</p>}

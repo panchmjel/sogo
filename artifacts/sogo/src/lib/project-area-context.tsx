@@ -2,6 +2,27 @@ import { createContext, useContext, type ReactNode } from 'react';
 import { purchaseAreaKey } from './project-area-routing';
 export { projectAreaPath, purchaseAreaKey, withPurchaseArea, withPurchaseAreaQueryKey } from './project-area-routing';
 
+const lastAreaStorageKey = (projectId: string) => `sogo:last-purchase-area:${projectId}`;
+
+export function getLastPurchaseAreaId(projectId: string) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const value = window.localStorage.getItem(lastAreaStorageKey(projectId));
+    return value && value !== 'general' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberPurchaseArea(projectId: string, purchaseAreaId: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(lastAreaStorageKey(projectId), purchaseAreaId ?? 'general');
+  } catch {
+    // The route itself still preserves the selected topic when storage is unavailable.
+  }
+}
+
 export type ProjectAreaContextValue = {
   projectId: string;
   purchaseAreaId: string | null;
