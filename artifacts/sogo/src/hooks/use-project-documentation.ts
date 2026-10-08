@@ -543,15 +543,6 @@ export function useProjectDocumentation({
     });
   }, [contextKey, jobQuery.data?.job, syncScope]);
 
-  const openPanel = useCallback((preselectedDocumentIds: string[] = []) => {
-    if (!storedJob) setError('');
-    if (preselectedDocumentIds.length > 0) {
-      formTouchedRef.current = true;
-      setSelectedDocumentIds((current) => [...new Set([...current, ...preselectedDocumentIds])].slice(0, 12));
-    }
-    setOpen(true);
-  }, [storedJob]);
-
   const clearStoredJob = useCallback(() => {
     if (storedJob?.jobId && dismissedStorageKey) {
       setDismissedJobId(storedJob.jobId);
@@ -574,6 +565,20 @@ export function useProjectDocumentation({
       });
     }
   }, [authUserId, dismissedStorageKey, persist, projectId, purchaseAreaId, queryClient, storageKey, storedJob?.jobId]);
+
+  const openPanel = useCallback((preselectedDocumentIds: string[] = []) => {
+    if (preselectedDocumentIds.length > 0) {
+      if (isProjectDocumentationJobActive(job?.status)) {
+        setError('Trwa przygotowanie poprzedniej listy. Poczekaj na zakończenie, aby rozpocząć nowe zadanie.');
+        setOpen(true);
+        return;
+      }
+      clearStoredJob();
+      formTouchedRef.current = true;
+      setSelectedDocumentIds([...new Set(preselectedDocumentIds)].slice(0, 12));
+    } else if (!storedJob) setError('');
+    setOpen(true);
+  }, [clearStoredJob, job?.status, storedJob]);
 
   const startWithRequest = useCallback((request: GenerateProjectDocumentationRequest) => {
     if (!storageKey) {

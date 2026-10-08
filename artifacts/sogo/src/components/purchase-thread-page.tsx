@@ -145,7 +145,7 @@ function SourcePayload({
     <details className="group rounded-lg border border-border/80 bg-background/60">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs">
         <ChevronDown size={14} className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-        <span className="min-w-0 flex-1 truncate font-semibold">{source.category || source.type || 'Źródło'}</span>
+        <span className="min-w-0 flex-1 truncate font-semibold">{({ USER: 'Twoje ustalenie', DOCUMENT: 'Dokument', OFFER: 'Oferta' } as Record<string, string>)[source.category || source.type || ''] ?? 'Źródło'}</span>
       </summary>
       <div className="space-y-2 border-t border-border/70 px-3 py-3">
         {source.text && <p className="whitespace-pre-wrap text-xs leading-5">{source.text}</p>}
@@ -640,10 +640,9 @@ function SavedScopePanel({ api }: { api: ThreadApi }) {
 
 type WorkspaceTab = 'materials' | 'comparisons' | 'files';
 
-function OfferComparisonAction({ api }: { api: ThreadApi }) {
+function OfferComparisonAction({ api, selectedIds, setSelectedIds }: { api: ThreadApi; selectedIds: string[]; setSelectedIds: React.Dispatch<React.SetStateAction<string[]>> }) {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmedVersion, setConfirmedVersion] = useState<number | null>(null);
   const [lastRequest, setLastRequest] = useState<{ documentIds: [string, string]; scopeVersion: number; requestId: string } | null>(null);
   const [job, setJob] = useState<AIJob | null>(null);
@@ -768,7 +767,7 @@ function OfferComparisonAction({ api }: { api: ThreadApi }) {
         <section className="rounded-xl border border-border bg-card p-4" aria-live="polite">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-bold">{isRunning ? 'Porównanie w toku' : currentJob.status === 'DONE' ? 'Wynik zapisany na serwerze' : currentJob.status === 'FAILED' ? 'Porównanie nieudane' : 'Status porównania'}</p>
-            <span className="font-mono text-[10px] text-muted-foreground">{currentJob.status}</span>
+            <span className="font-mono text-[10px] text-muted-foreground">{({ DONE: 'Gotowe', FAILED: 'Nie udało się', QUEUED: 'W kolejce', RUNNING: 'Trwa porównanie', RETRY_WAIT: 'Ponawianie' } as Record<string, string>)[currentJob.status] ?? 'Sprawdzanie stanu'}</span>
           </div>
           {isRunning ? <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle size={13} className="animate-spin" />Wynik pojawi się po zakończeniu analizy.</p>
             : currentJob.status === 'FAILED' ? <p className="mt-2 text-xs text-destructive" role="alert">{currentJob.errorMessage || 'Nie udało się przygotować porównania.'}</p>
@@ -792,7 +791,7 @@ function OfferComparisonAction({ api }: { api: ThreadApi }) {
         </section>
       )}
       <section className="rounded-xl border border-border bg-card/70">
-        <header className="border-b border-border/70 px-4 py-3"><p className="text-xs font-bold">Zapisana historia</p><p className="mt-1 text-[10px] text-muted-foreground">Pobrana z serwera; szkic wyboru ofert powyżej nie jest historią.</p></header>
+        <header className="border-b border-border/70 px-4 py-3"><p className="text-xs font-bold">Zapisana historia</p><p className="mt-1 text-[10px] text-muted-foreground">Wcześniejsze porównania ofert.</p></header>
         <div className="max-h-[420px] overflow-y-auto"><ComparisonsHistoryPage embedded showCreateLink={false} selectedJobId={job?.jobId} onSelectJob={(selected) => {
           compareMutation.reset();
           setLastRequest(null);
@@ -812,7 +811,7 @@ function FilesPanel({
   api: ThreadApi;
   onUploadFiles: (files: File[]) => void;
   onPrepareDocument: (documentId: string) => void;
-  onShowComparisons: () => void;
+  onShowComparisons: (documentId: string) => void;
 }) {
   const filesPath = projectAreaPath(api.projectId, api.purchaseAreaId, 'documents');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -867,7 +866,7 @@ function FilesPanel({
                       </button>
                     )}
                     {type === 'OFFER' && isOfferResultDocument(document) && (
-                      <button type="button" onClick={onShowComparisons} className="min-h-9 rounded-lg border border-border px-3 text-[10px] font-bold hover:bg-secondary">
+                      <button type="button" onClick={() => onShowComparisons(document.documentId)} className="min-h-9 rounded-lg border border-border px-3 text-[10px] font-bold hover:bg-secondary">
                         Wybierz do porównania
                       </button>
                     )}
@@ -913,7 +912,11 @@ function WorkspaceDataPanel({
   onUploadFiles,
   onPrepareDocument,
   onShowComparisons,
+  selectedOfferIds,
+  setSelectedOfferIds,
 }: {
+  selectedOfferIds: string[];
+  setSelectedOfferIds: React.Dispatch<React.SetStateAction<string[]>>;
   api: ThreadApi;
   selectedProposal: PurchaseThreadScopeProposal | null;
   tab: WorkspaceTab;
@@ -922,7 +925,7 @@ function WorkspaceDataPanel({
   onUpdatedProposal: () => void;
   onUploadFiles: (files: File[]) => void;
   onPrepareDocument: (documentId: string) => void;
-  onShowComparisons: () => void;
+  onShowComparisons: (documentId: string) => void;
 }) {
   const tabs: Array<{ id: WorkspaceTab; label: string }> = [
     { id: 'materials', label: 'Materiały' },
@@ -954,7 +957,7 @@ function WorkspaceDataPanel({
             )}
           </div>
         ) : tab === 'comparisons' ? (
-          <div className="h-full min-h-0 w-full min-w-0 overflow-y-auto"><OfferComparisonAction api={api} /></div>
+          <div className="h-full min-h-0 w-full min-w-0 overflow-y-auto"><OfferComparisonAction api={api} selectedIds={selectedOfferIds} setSelectedIds={setSelectedOfferIds} /></div>
         ) : (
           <FilesPanel
             api={api}
@@ -1137,6 +1140,8 @@ export function PurchaseThreadPage({ projectId }: Props) {
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [showNewResponse, setShowNewResponse] = useState(false);
   const [uploadDialog, setUploadDialog] = useState<{ files: File[]; source: 'conversation' | 'files' } | null>(null);
+  const [selectedOfferIds, setSelectedOfferIds] = useState<string[]>([]);
+  useEffect(() => { setSelectedOfferIds([]); }, [api.areaKey]);
   const [documentationFlowOpen, setDocumentationFlowOpen] = useState(false);
   const [documentationPreselection, setDocumentationPreselection] = useState<string[]>([]);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -1255,6 +1260,12 @@ export function PurchaseThreadPage({ projectId }: Props) {
                 <GitCompareArrows size={12} /> Porównaj oferty
               </button>
             </div>
+            {api.documents.some((document) => documentTypeOf(document) === 'UNKNOWN') && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/25 px-3 py-2 text-xs">
+                <span>Część plików nie ma wybranego rodzaju. Asystent korzysta z zapisanej listy, ale pomija te pliki.</span>
+                <button type="button" onClick={() => { setPanelTab('files'); setMobileView('data'); }} className="font-bold underline">Wybierz rodzaje plików</button>
+              </div>
+            )}
             {api.threadError && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/20 bg-card px-3 py-2 text-xs" role="alert">
                 <span>{api.threadError}</span>
@@ -1316,7 +1327,10 @@ export function PurchaseThreadPage({ projectId }: Props) {
             onUpdatedProposal={() => setMobileView('conversation')}
             onUploadFiles={(files) => setUploadDialog({ files, source: 'files' })}
             onPrepareDocument={prepareDocument}
-            onShowComparisons={() => {
+            selectedOfferIds={selectedOfferIds}
+            setSelectedOfferIds={setSelectedOfferIds}
+            onShowComparisons={(documentId) => {
+              setSelectedOfferIds((current) => current.includes(documentId) ? current : [...current.slice(-1), documentId]);
               setPanelTab('comparisons');
               setMobileView('data');
             }}
