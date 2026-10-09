@@ -121,7 +121,7 @@ def run_conversation(job,table,s3,bucket,context,save):
         if plan.get('type')=='COMPARISON':
             from direct_comparison import build
             try: result=build(plan,payload,job['jobId'],manifest)
-            except ValueError as exc: result={'type':'ANSWER','text':str(exc)+'. Doprecyzuj wybór w rozmowie.','changes':[],'findings':[]}
+            except ValueError: raise
             after=None
         else: result,after=prepare(plan,payload,job['jobId'],manifest,c)
         if result['type']=='SCOPE_PROPOSAL':
@@ -135,10 +135,17 @@ def run_conversation(job,table,s3,bucket,context,save):
         result.update(provider='anthropic',modelId=response.get('model',model),usage=response.get('usage',{}),sources=manifest,requiresReview=True,createdAt=c.now(),pipelineVersion=VERSION)
         key=prefix+'/result.json'; c.write_json(s3,bucket,key,result)
         save(status='DONE',stage='DONE',resultKey=key,completedAt=c.now(),errorMessage='')
-    except DirectError as e:
-        save(status='FAILED',stage='FAILED',errorCode=e.code,publicErrorMessage=e.public)
-    except (ValueError,KeyError,TypeError):
-        save(status='FAILED',stage='FAILED',errorCode='DIRECT_INVALID_RESULT',publicErrorMessage='Odpowiedź wymaga ponownego sprawdzenia. Nie zmieniono listy materiałów.')
+    except (DirectError,ValueError,KeyError,TypeError) as e:
+        from response_display import answer
+        fallback=answer(locals().get('response') or {})
+        if fallback:
+            fallback.update(provider='anthropic',modelId=response.get('model',model),sources=locals().get('manifest',[]),createdAt=c.now(),pipelineVersion=VERSION)
+            key=prefix+'/result.json'; c.write_json(s3,bucket,key,fallback)
+            save(status='DONE',stage='DONE',resultKey=key,completedAt=c.now(),errorMessage='',errorCode='',publicErrorMessage='')
+        elif isinstance(e,DirectError):
+            save(status='FAILED',stage='FAILED',errorCode=e.code,publicErrorMessage=e.public)
+        else:
+            save(status='FAILED',stage='FAILED',errorCode='DIRECT_INVALID_RESULT',publicErrorMessage='Claude nie zwrócił treści odpowiedzi. Wiadomość i dokumenty są zachowane.')
 
 def run_documentation(job,table,s3,bucket,context,save):
     """Single joint read of original documents; use established review/apply contract."""

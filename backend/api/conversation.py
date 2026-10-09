@@ -34,6 +34,12 @@ def clean(job):
 def expose(api,job):
     out=clean(job)
     if job.get('status')=='DONE' and job.get('resultKey'): out['result']=read_json(api.S3,api.BUCKET,job['resultKey'])
+    if job.get('status')=='FAILED' and job.get('directResponseKey'):
+        from response_display import answer
+        recovered=answer(read_json(api.S3,api.BUCKET,job['directResponseKey']))
+        if recovered:
+            out.update(status='DONE',stage='DONE',result=recovered)
+            out.pop('errorCode',None)
     if out.get('result',{}).get('proposalId'):
         proposal=get(api.TABLE,job['projectId'],'PROPOSAL#'+out['result']['proposalId'])
         if proposal:
@@ -41,7 +47,7 @@ def expose(api,job):
             out['result']['appliedChangeIds']=proposal.get('appliedChangeIds',[])
             out['result']['expectedScopeVersion']=int(proposal['expectedScopeVersion'])
             if proposal.get('appliedVersion'): out['result']['appliedVersion']=int(proposal['appliedVersion'])
-    if job.get('status')=='FAILED': out['error']={'code':job.get('errorCode','TURN_FAILED'),'message':job.get('publicErrorMessage') or 'Nie udało się zakończyć odpowiedzi. Wiadomość i dokumenty zostały zachowane.'}
+    if out.get('status')=='FAILED': out['error']={'code':job.get('errorCode','TURN_FAILED'),'message':job.get('publicErrorMessage') or 'Nie udało się zakończyć odpowiedzi. Wiadomość i dokumenty zostały zachowane.'}
     return out
 
 def cached_offers(s3,bucket,docs,chosen):
