@@ -13,6 +13,7 @@ export class ApiNotConfiguredError extends Error {
 }
 
 export type Project = {
+  isPrivate?: boolean;
   projectId: string;
   name: string;
   ownerId: string;
@@ -1386,8 +1387,8 @@ export function resendAdminInvitation(userId: string) {
   return apiRequest<unknown>('admin_resend_invitation', { userId });
 }
 
-export function createProject(name: string, requestId = crypto.randomUUID()) {
-  return apiRequest<Project>('create_project', { name, requestId });
+export function createProject(name: string, requestId = crypto.randomUUID(), isPrivate = false) {
+  return apiRequest<Project>('create_project', { name, requestId, isPrivate });
 }
 
 export function listDocuments(projectId: string, purchaseAreaId?: string | null, signal?: AbortSignal) {
@@ -1915,3 +1916,4 @@ export function importComparisonScopeOffer(
 export function exportThreadComparison(projectId: string, threadId: string, jobId: string, purchaseAreaId?: string | null) {
   return apiRequest<{fileName: string; base64: string; contentType: string}>('export_thread_comparison', withPurchaseArea({projectId, threadId, jobId}, purchaseAreaId));
 }
+

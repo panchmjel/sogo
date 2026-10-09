@@ -32,6 +32,7 @@ export type InvoiceStatus =
   | string;
 
 export type Invoice = {
+  sharedWith?: string[];
   invoiceId: string;
   ownerId: string;
   ownerName?: string | null;

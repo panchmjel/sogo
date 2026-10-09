@@ -64,7 +64,7 @@ class Directory:
             self.cognito.admin_create_user(UserPoolId=self.pool,Username=user['Username'],MessageAction='RESEND',DesiredDeliveryMediums=['EMAIL'])
             return {'invitationSent':True,'userId':target}
         if action=='admin_user_projects':
-            projects=self.access.projects();pk='USER#'+target
+            projects={pid:p for pid,p in self.access.projects().items() if self.access.visible_project(subject,p)};pk='USER#'+target
             return {'user':self.public(user),'items':[{'projectId':pid,'name':p['name'],
-                'assigned':bool(self.access.get(pk,'PROJECT#'+pid)) and not bool(self.access.get(pk,'DENY#'+pid))} for pid,p in projects.items()]}
+                'assigned':self.access.visible_project(target,p)} for pid,p in projects.items()]}
         raise AccessError(400,'Nieznana operacja.')

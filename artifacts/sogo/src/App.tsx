@@ -1,3 +1,4 @@
+import { ProjectPrivacy } from './components/privacy-controls';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   QueryClient,
@@ -640,6 +641,7 @@ function ProjectsPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [projectName, setProjectName] = useState('');
+  const [privateProject, setPrivateProject] = useState(false);
   const queryClient = useQueryClient();
   const session = useApiSession();
   const projectsQuery = useQuery({
@@ -650,7 +652,7 @@ function ProjectsPage() {
     staleTime: 15_000,
   });
   const createMutation = useMutation({
-    mutationFn: (name: string) => createProject(name),
+    mutationFn: (name: string) => createProject(name, undefined, privateProject),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['projects'] });
       setProjectName('');
@@ -706,6 +708,7 @@ function ProjectsPage() {
               data-testid="input-project-name"
             />
           </label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={privateProject} onChange={e => setPrivateProject(e.target.checked)} />Prywatny — tylko dla mnie</label>
           <button type="submit" disabled={!projectName.trim() || createMutation.isPending} className="inline-flex h-11 items-center justify-center rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-submit-project">
             {createMutation.isPending ? 'Tworzenie…' : 'Utwórz projekt'}
           </button>
@@ -748,14 +751,14 @@ function LoadingState({ label }: { label: string }) {
 
 function ProjectCard({ project }: { project: Project }) {
   return (
-    <Link href={`/projects/${project.projectId}`} className="group rounded-2xl border border-border bg-card/70 p-5 transition hover:-translate-y-0.5 hover:border-foreground/25" data-testid={`link-project-${project.projectId}`}>
+    <div><Link href={`/projects/${project.projectId}`} className="block group rounded-2xl border border-border bg-card/70 p-5 transition hover:-translate-y-0.5 hover:border-foreground/25" data-testid={`link-project-${project.projectId}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="grid h-10 w-10 place-items-center rounded-xl bg-secondary text-accent"><FolderKanban size={19} /></div>
         <ArrowUpRight size={17} className="text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
       </div>
       <p className="mt-6 font-display text-xl font-bold tracking-[-0.03em]">{project.name}</p>
       <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Utworzono <PolishDate value={project.createdAt} /></p>
-    </Link>
+    </Link><ProjectPrivacy project={project} /></div>
   );
 }
 

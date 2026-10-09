@@ -1,3 +1,4 @@
+import { InvoiceSharing } from './privacy-controls';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -411,17 +412,18 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
           <h1 className="mt-2 truncate font-display text-2xl font-bold tracking-[-0.04em] md:text-[36px]" data-testid="heading-invoice-detail">{invoice.filename}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-2"><StatusBadge status={invoice.status} />{invoice.status === 'READY' && hasMissingFields && <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary" data-testid="status-invoice-missing-fields">Uzupełnij brakujące dane</span>}{processing && <span className="text-xs text-muted-foreground" data-testid="text-invoice-polling">Odświeżanie statusu co 5 sekund</span>}</div>
         </div>
-        {invoice.status === 'FAILED' && <button type="button" onClick={() => setRetryWarning(true)} disabled={retryMutation.isPending} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 text-sm font-bold text-destructive disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-retry-invoice-analysis"><RefreshCw size={16} /> Ponów odczyt</button>}
+        {invoice.ownerId === session.authUserId && invoice.status === 'FAILED' && <button type="button" onClick={() => setRetryWarning(true)} disabled={retryMutation.isPending} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 text-sm font-bold text-destructive disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-retry-invoice-analysis"><RefreshCw size={16} /> Ponów odczyt</button>}
       </header>
 
       {query.error && query.data && !isMissingInvoice(query.error) && <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between" role="alert" data-testid="error-refresh-invoice"><p className="text-sm text-destructive">Nie udało się odświeżyć danych faktury. {displayError}</p><button type="button" onClick={() => void query.refetch()} disabled={query.isFetching} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-destructive/30 px-3 text-xs font-bold text-destructive disabled:opacity-50" data-testid="button-retry-refresh-invoice"><RefreshCw size={14} /> Spróbuj ponownie</button></div>}
       {invoice.status === 'FAILED' && invoice.analysisError && <div className="mt-5 flex gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4" role="alert" data-testid="error-invoice-analysis"><TriangleAlert size={17} className="mt-0.5 shrink-0 text-destructive" /><div><p className="text-sm font-bold text-destructive">Odczyt nie powiódł się</p><p className="mt-1 text-sm leading-6 text-destructive/85">{invoice.analysisError}</p></div></div>}
       {conflict && <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-primary/35 bg-primary/8 p-4 sm:flex-row sm:items-center sm:justify-between" role="alert" data-testid="warning-invoice-conflict"><div><p className="text-sm font-bold">Dokument został zmieniony w międzyczasie</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Twoje wpisane zmiany pozostały na ekranie. Odświeżenie pobierze wersję z serwera i odrzuci lokalne zmiany.</p></div><button type="button" onClick={() => void refreshAfterConflict()} disabled={query.isFetching} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-bold" data-testid="button-refresh-invoice-conflict"><RefreshCw size={14} /> Odśwież dane</button></div>}
 
+      <InvoiceSharing invoice={invoice} onSaved={() => { void query.refetch(); }} />
       <div className="mt-8 grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
         <div className="order-1 space-y-5">
           <Form {...form}>
-          <form onSubmit={form.handleSubmit(saveChanges)} className="rounded-2xl border border-border bg-card/70 p-5 sm:p-6" data-testid="form-invoice">
+          <form onSubmit={form.handleSubmit(saveChanges)} className="rounded-2xl border border-border bg-card/70 p-5 sm:p-6" data-testid="form-invoice"><fieldset disabled={invoice.ownerId !== session.authUserId}>
             <div className="flex flex-col justify-between gap-3 border-b border-border pb-4 sm:flex-row sm:items-center"><div className="flex items-center gap-2"><FileText size={17} className="text-accent" /><h2 className="font-display font-bold">Dane faktury</h2></div><span className={`text-xs font-semibold ${dirty ? 'text-primary' : 'text-muted-foreground'}`} data-testid="status-invoice-dirty">{dirty ? 'Niezapisane zmiany' : 'Wersja zapisana'}</span></div>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               {INVOICE_FIELD_KEYS.map((key) => (
@@ -517,7 +519,7 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
             </div>
             {saveMessage && <p className={`mt-4 flex items-center gap-2 text-sm font-semibold ${saveMutation.isError ? 'text-destructive' : 'text-accent'}`} role={saveMutation.isError ? 'alert' : undefined} data-testid={saveMutation.isError ? 'error-save-invoice' : 'status-save-invoice'}>{saveMutation.isError ? <TriangleAlert size={16} /> : <Check size={16} />} {saveMessage}</p>}
             <div className="mt-5 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{fieldsEditable ? 'Możesz poprawić dane odczytu i przypisać projekt.' : 'Podczas odczytu możesz zapisać notatkę i przypisanie.'}</p><button type="submit" disabled={!dirty || saveMutation.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45" data-testid="button-save-invoice">{saveMutation.isPending ? 'Zapisywanie…' : <><Save size={16} /> Zapisz zmiany</>}</button></div>
-          </form>
+          </fieldset></form>
           </Form>
 
           <OriginalExtraction invoice={invoice} />
@@ -587,3 +589,4 @@ function AuditLine({ invoice }: { invoice: Invoice }) {
     </div>
   );
 }
+

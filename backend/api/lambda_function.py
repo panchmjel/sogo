@@ -141,18 +141,18 @@ def execute_authorized(subject, body):
         return result
     if action == 'me':
         return identity
+    if action == 'set_project_privacy':
+        return access.set_privacy(subject,body)
     if action == 'list_projects':
-        if identity['role'] == 'ADMIN':
-            return {'items':[public(p) for p in access.projects().values()], 'nextCursor':None}
-        result = page(userpk, 'PROJECT#', body.get('cursor'))
-        result['items'] = [p for p in result['items'] if not access.get(userpk, 'DENY#'+p['projectId'])]
-        return result
+        return {'items':[public(p) for p in access.projects().values() if access.visible_project(subject,p)], 'nextCursor':None}
     if action == 'create_project':
         access.admin(subject)
+        private=body.get('isPrivate',False)
+        if type(private) is not bool: raise Problem(400,'Podaj ustawienie prywatności.')
         name = string(body.get('name'), 160)
         rid = identifier(body.get('requestId'))
         pid = str(uuid.uuid5(uuid.NAMESPACE_URL, subject + '/project/' + rid))
-        return public(create({'PK': userpk, 'SK': 'PROJECT#' + pid, 'projectId': pid, 'name': name, 'ownerId': subject, 'createdAt': now(), 'requestHash': fingerprint({'name': name})}))
+        return public(create({'PK': userpk, 'SK': 'PROJECT#' + pid, 'projectId': pid, 'name': name, 'ownerId': subject, 'isPrivate':private, 'createdAt': now(), 'requestHash': fingerprint({'name': name,'isPrivate':private})}))
     from purchase_areas import Areas, ACTIONS as AREA_ACTIONS
     areas = Areas(TABLE)
     if action in AREA_ACTIONS:

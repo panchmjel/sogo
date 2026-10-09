@@ -5,7 +5,7 @@ from urllib.parse import quote
 from botocore.exceptions import ClientError
 from access_control import Access, AccessError, uid
 
-ACTIONS={'list_invoices','prepare_invoice_upload','complete_invoice_upload','get_invoice','save_invoice','retry_invoice_analysis'}
+ACTIONS={'list_invoices','prepare_invoice_upload','complete_invoice_upload','get_invoice','save_invoice','retry_invoice_analysis','share_invoice','invoice_share_users'}
 FIELDS={'supplier','invoiceNumber','issueDate','dueDate','grossAmount','currency'}
 TYPES={'pdf':'application/pdf','png':'image/png','jpg':'image/jpeg','jpeg':'image/jpeg'}
 def stamp():return datetime.now(timezone.utc).isoformat()
@@ -27,21 +27,15 @@ def valid_fields(data):
     return out
 
 def public(item):
-    names=('invoiceId','ownerId','projectId','filename','contentType','size','createdAt','status','analysisError','fields','note','revision','updatedAt','updatedBy','analysisCompletedAt','sources','originalFields','fieldsUpdatedBy','fieldsUpdatedAt')
+    names=('invoiceId','ownerId','sharedWith','projectId','filename','contentType','size','createdAt','status','analysisError','fields','note','revision','updatedAt','updatedBy','analysisCompletedAt','sources','originalFields','fieldsUpdatedBy','fieldsUpdatedAt')
     return {k:item[k] for k in names if k in item}
 
 class Invoices:
     def __init__(self,table,s3,sqs,bucket,queue):
         self.table,self.s3,self.sqs,self.bucket,self.queue=table,s3,sqs,bucket,queue;self.access=Access(table)
     def allowed(self,subject,item):
-        identity=self.access.identity(subject)
-        if identity['role']=='ADMIN':return True
-        if item.get('projectId'):
-            try:self.access.authorize_project(subject,item['projectId']);return True
-            except AccessError as e:
-                if e.status==404:return False
-                raise
-        return item['ownerId']==subject
+        self.access.identity(subject)
+        return item.get('ownerId')==subject or subject in item.get('sharedWith',[])
     def get(self,subject,i):
         item=self.table.get_item(Key=key(i),ConsistentRead=True).get('Item')
         if not item or not self.allowed(subject,item):raise AccessError(404,'Faktura nie istnieje lub nie masz dostępu.')
@@ -82,7 +76,7 @@ class Invoices:
             if ext not in TYPES or type(size)!=int or not 0<size<=25*1024*1024:raise AccessError(400,'Dodaj PDF, PNG lub JPG do 25 MiB.')
             i=str(uuid.uuid5(uuid.NAMESPACE_URL,subject+'/invoice/'+rid));obj='uploads/invoices/'+i+'/original.'+ext
             item={**key(i),'invoiceId':i,'ownerId':subject,'projectId':None,'filename':name,'size':size,'contentType':TYPES[ext],
-                  'objectKey':obj,'status':'UPLOAD_PENDING','createdAt':stamp(),'revision':0,'fields':dict.fromkeys(FIELDS),'note':''}
+                  'sharedWith':[],'objectKey':obj,'status':'UPLOAD_PENDING','createdAt':stamp(),'revision':0,'fields':dict.fromkeys(FIELDS),'note':''}
             try:self.table.put_item(Item=item,ConditionExpression='attribute_not_exists(PK)')
             except ClientError as e:
                 if e.response['Error']['Code']!='ConditionalCheckFailedException':raise
@@ -93,6 +87,31 @@ class Invoices:
                 upload=self.s3.generate_presigned_post(Bucket=self.bucket,Key=obj,Fields={'Content-Type':TYPES[ext]},Conditions=[{'Content-Type':TYPES[ext]},['content-length-range',size,size]],ExpiresIn=300)
             return {'invoice':public(item),'upload':upload}
         item=self.get(subject,body.get('invoiceId'));i=item['invoiceId']
+        if action != 'get_invoice' and item['ownerId'] != subject:
+            raise AccessError(403,'Tylko właściciel może zmieniać i udostępniać fakturę.')
+        if action=='invoice_share_users':
+            from user_directory import Directory
+            import boto3,os
+            directory=Directory(self.table,boto3.client('cognito-idp'),os.environ['COGNITO_USER_POOL_ID'])
+            users=[];args={'UserPoolId':directory.pool,'Limit':60}
+            while True:
+                page=directory.cognito.list_users(**args)
+                for raw in page.get('Users',[]):
+                    u=directory.public(raw)
+                    if u['enabled'] and u['cognitoEnabled'] and u['userId']!=subject:
+                        users.append({k:u[k] for k in ('userId','name','email')})
+                if not page.get('PaginationToken'):break
+                args['PaginationToken']=page['PaginationToken']
+            return {'items':users}
+        if action=='share_invoice':
+            targets=body.get('sharedWith');revision=body.get('expectedRevision')
+            if not isinstance(targets,list) or len(targets)>100:raise AccessError(400,'Wybierz użytkowników.')
+            targets=sorted(set(uid(x) for x in targets)-{subject})
+            for target in targets:self.access.identity(target)
+            if type(revision)!=int or revision!=int(item['revision']):raise AccessError(409,'Faktura zmieniła się. Odśwież widok.')
+            values={'sharedWith':targets,'revision':revision+1,'updatedBy':subject,'updatedAt':stamp()}
+            self.update(i,values,'#n1 = :expected',{':expected':revision})
+            return {'invoice':public(dict(item,**values))}
         if action=='complete_invoice_upload':
             if item['status']=='UPLOAD_PENDING':
                 obj=self.s3.head_object(Bucket=self.bucket,Key=item['objectKey'])

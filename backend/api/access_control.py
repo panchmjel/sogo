@@ -43,12 +43,25 @@ class Access:
             if not key: break
             args['ExclusiveStartKey'] = key
         return result
+    def visible_project(self, subject, project):
+        if project.get('ownerId') == subject: return True
+        if project.get('isPrivate') is True: return False
+        return not self.get('USER#'+subject, 'DENY#'+project['projectId'])
     def authorize_project(self, subject, pid):
-        identity = self.identity(subject)
-        if identity['role'] == 'ADMIN':
-            if pid in self.projects(): return
-        elif (not self.get('USER#'+subject, 'DENY#'+pid) and self.get('USER#'+subject, 'PROJECT#'+pid)): return
+        self.identity(subject)
+        project = self.projects().get(pid)
+        if project and self.visible_project(subject, project): return
         raise AccessError(404, 'Projekt nie istnieje lub nie masz dostępu.')
+    def set_privacy(self, subject, body):
+        self.identity(subject)
+        pid=uid(body.get('projectId')); project=self.projects().get(pid)
+        if not project or project.get('ownerId') != subject:
+            raise AccessError(404, 'Tylko twórca może zmieniać prywatność projektu.')
+        private=body.get('isPrivate')
+        if type(private) is not bool: raise AccessError(400, 'Podaj ustawienie prywatności.')
+        self.table.update_item(Key={'PK':project['PK'],'SK':project['SK']},
+            UpdateExpression='SET isPrivate = :p',ExpressionAttributeValues={':p':private})
+        return {'projectId':pid,'isPrivate':private}
     def manage(self, subject, body):
         self.admin(subject)
         action = body['action']
