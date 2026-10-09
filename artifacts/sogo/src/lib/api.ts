@@ -1100,7 +1100,8 @@ export type PurchaseThreadScopeProposal = {
   type: 'SCOPE_PROPOSAL';
   text: string;
   proposalId: string;
-  proposalStatus: 'PROPOSED' | 'APPLIED' | string;
+  proposalStatus: 'PROPOSED' | 'PARTIALLY_APPLIED' | 'APPLIED' | string;
+  appliedChangeIds?: string[];
   expectedScopeVersion: number;
   changes: PurchaseThreadScopeChange[];
   rulesChange?: { before: string[]; after: string[] } | null;
@@ -1153,6 +1154,7 @@ export type SendPurchaseTurnInput = {
 };
 
 export type ApplyPurchaseProposalInput = {
+  changeIds?: string[];
   projectId: string;
   threadId: string;
   proposalId: string;
@@ -1161,6 +1163,8 @@ export type ApplyPurchaseProposalInput = {
 };
 
 export type ApplyPurchaseProposalResponse = {
+  proposalStatus?: string;
+  appliedChangeIds?: string[];
   applied: boolean;
   alreadyApplied: boolean;
   appliedVersion: number | null;
@@ -1916,4 +1920,5 @@ export function importComparisonScopeOffer(
 export function exportThreadComparison(projectId: string, threadId: string, jobId: string, purchaseAreaId?: string | null) {
   return apiRequest<{fileName: string; base64: string; contentType: string}>('export_thread_comparison', withPurchaseArea({projectId, threadId, jobId}, purchaseAreaId));
 }
+
 

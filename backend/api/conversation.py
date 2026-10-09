@@ -38,6 +38,8 @@ def expose(api,job):
         proposal=get(api.TABLE,job['projectId'],'PROPOSAL#'+out['result']['proposalId'])
         if proposal:
             out['result']['proposalStatus']=proposal['status']
+            out['result']['appliedChangeIds']=proposal.get('appliedChangeIds',[])
+            out['result']['expectedScopeVersion']=int(proposal['expectedScopeVersion'])
             if proposal.get('appliedVersion'): out['result']['appliedVersion']=int(proposal['appliedVersion'])
     if job.get('status')=='FAILED': out['error']={'code':job.get('errorCode','TURN_FAILED'),'message':job.get('publicErrorMessage') or 'Nie udało się zakończyć odpowiedzi. Wiadomość i dokumenty zostały zachowane.'}
     return out
@@ -326,28 +328,69 @@ def run(job,table,s3,bucket,converse,context,save,model,continue_exception):
     resultkey=prefix+'/result.json'; write_json(s3,bucket,resultkey,result)
     save(status='DONE',stage='DONE',resultKey=resultkey,completedAt=now(),errorMessage='')
 
+def selected_scope(old, result, selected):
+    """Apply only explicit, stable change IDs; preserve all other scope fields."""
+    after=copy.deepcopy(old or {})
+    items=after.setdefault('items',[])
+    for change in result.get('changes',[]):
+        iid=change['itemId']
+        if iid not in selected: continue
+        current=next((r for r in items if r['itemId']==iid),None)
+        if current != change.get('before'): raise ValueError('BASE_CHANGED')
+        if change.get('after') is None: items[:]=[r for r in items if r['itemId']!=iid]
+        elif current is None: items.append(copy.deepcopy(change['after']))
+        else: items[:]=[copy.deepcopy(change['after']) if r['itemId']==iid else r for r in items]
+    if '__rules__' in selected:
+        if after.get('purchaseRules',[]) != result['rulesChange']['before']: raise ValueError('BASE_CHANGED')
+        after['purchaseRules']=result['rulesChange']['after']
+    return after
+
 def apply(api,subject,pid,tid,body):
     propid=api.identifier(body.get('proposalId')); rid=api.identifier(body.get('requestId')); expected=body.get('expectedScopeVersion')
+    selection=body.get('changeIds')
+    if selection is not None and (not isinstance(selection,list) or not selection or len(selection)>201 or any(not isinstance(x,str) for x in selection) or len(set(selection))!=len(selection)):
+        raise api.Problem(400,'Wybierz co najmniej jedną zmianę.','INVALID_SELECTION')
+    signature=digest({'proposalId':propid,'expectedScopeVersion':expected,'changeIds':sorted(selection) if selection is not None else None})
     prop=get(api.TABLE,pid,'PROPOSAL#'+propid)
     if not prop or prop['threadId']!=tid: raise api.Problem(404,'Nie znaleziono propozycji.')
-    if type(expected)is not int or expected!=int(prop['expectedScopeVersion']): raise api.Problem(409,'Wersja nie odpowiada propozycji.','SCOPE_VERSION_CONFLICT')
+    def response(already=False):
+        current=get(api.TABLE,pid,'PROPOSAL#'+propid)
+        return {'applied':True,'alreadyApplied':already,'appliedVersion':int(current['appliedVersion']), 'proposalStatus':current['status'],'appliedChangeIds':current.get('appliedChangeIds',[]),'scope':api.scope_response(get(api.TABLE,pid,'SCOPE#CURRENT'))['scope']}
     receipt=get(api.TABLE,pid,'APPLY#'+rid)
-    if receipt and receipt.get('proposalId')!=propid: raise api.Problem(409,'requestId użyto z innymi danymi.','REQUEST_ID_CONFLICT')
-    if prop['status']=='APPLIED': return {'applied':True,'alreadyApplied':True,'appliedVersion':int(prop['appliedVersion']),'scope':api.scope_response(get(api.TABLE,pid,'SCOPE#CURRENT'))['scope']}
+    if receipt:
+        if receipt.get('signature')!=signature: raise api.Problem(409,'requestId użyto z innymi danymi.','REQUEST_ID_CONFLICT')
+        return response(True)
+    if prop['status']=='APPLIED': return response(True)
+    if type(expected)is not int or expected!=int(prop['expectedScopeVersion']): raise api.Problem(409,'Wersja nie odpowiada propozycji.','SCOPE_VERSION_CONFLICT')
     old=get(api.TABLE,pid,'SCOPE#CURRENT')
     if int((old or {}).get('version',0))!=expected: raise api.Problem(409,'Lista zmieniła się. Poproś asystenta o nową propozycję.','SCOPE_VERSION_CONFLICT')
-    after=read_json(api.S3,api.BUCKET,prop['afterKey']); after.update(PK='PROJECT#'+pid,SK='SCOPE#CURRENT',projectId=pid,version=expected+1,updatedAt=now(),updatedBy=subject)
+    result=read_json(api.S3,api.BUCKET,prop['afterKey'].rsplit('/',1)[0]+'/result.json')
+    result=json.loads(json.dumps(result),parse_float=Decimal)
+    ids=[c['itemId'] for c in result.get('changes',[])]+(['__rules__'] if result.get('rulesChange') else [])
+    applied=set(prop.get('appliedChangeIds',[])); selected=set(selection if selection is not None else ids)
+    if not selected.issubset(set(ids)): raise api.Problem(400,'Nieznana pozycja propozycji.','INVALID_SELECTION')
+    selected-=applied
+    if not selected: return response(True)
+    try: after=selected_scope(old,result,selected)
+    except ValueError: raise api.Problem(409,'Pozycja zmieniła się. Odśwież propozycję.','SCOPE_VERSION_CONFLICT')
+    after.update(PK='PROJECT#'+pid,SK='SCOPE#CURRENT',projectId=pid,version=expected+1,updatedAt=now(),updatedBy=subject)
     after.setdefault('name','Lista zakupów'); after.setdefault('createdAt',now()); after.setdefault('sourceDocument',None)
     after.pop('lastRequestId',None); after.pop('lastRequestHash',None)
     if len(dumps(after).encode())>250000: raise api.Problem(413,'Lista przekracza limit rozmiaru.')
-    receipt=get(api.TABLE,pid,'APPLY#'+rid)
-    if receipt and receipt.get('proposalId')!=propid: raise api.Problem(409,'requestId użyto z innymi danymi.','REQUEST_ID_CONFLICT')
-    done=dict(prop,status='APPLIED',appliedVersion=expected+1,appliedBy=subject,appliedAt=now())
+    def decimalize(value):
+        if isinstance(value,float): return Decimal(str(value))
+        if isinstance(value,list): return [decimalize(v) for v in value]
+        if isinstance(value,dict): return {k:decimalize(v) for k,v in value.items()}
+        return value
+    after=decimalize(after)
+    applied.update(selected)
+    done=dict(prop,status='APPLIED' if applied==set(ids) else 'PARTIALLY_APPLIED',appliedChangeIds=sorted(applied),expectedScopeVersion=expected+1,appliedVersion=expected+1,appliedBy=subject,appliedAt=now())
     condition={'ExpressionAttributeNames':{'#v':'version'},'ExpressionAttributeValues':{':v':expected}} if old else {}
-    try: tx(api.TABLE,[put(api.TABLE,after,'#v = :v' if old else 'attribute_not_exists(PK)',**condition),put(api.TABLE,done,'#s = :s',ExpressionAttributeNames={'#s':'status'},ExpressionAttributeValues={':s':'PROPOSED'}),put(api.TABLE,{'PK':'PROJECT#'+pid,'SK':'APPLY#'+rid,'proposalId':propid})])
+    try:
+        tx(api.TABLE,[put(api.TABLE,after,'#v = :v' if old else 'attribute_not_exists(PK)',**condition),put(api.TABLE,done,'#s = :s AND expectedScopeVersion = :v',ExpressionAttributeNames={'#s':'status'},ExpressionAttributeValues={':s':prop['status'],':v':expected}),put(api.TABLE,{'PK':'PROJECT#'+pid,'SK':'APPLY#'+rid,'proposalId':propid,'signature':signature})])
     except ClientError as exc:
         if exc.response['Error']['Code']!='TransactionCanceledException': raise
-        current=get(api.TABLE,pid,'PROPOSAL#'+propid)
-        if current and current['status']=='APPLIED': return {'applied':True,'alreadyApplied':True,'appliedVersion':int(current['appliedVersion']),'scope':api.scope_response(get(api.TABLE,pid,'SCOPE#CURRENT'))['scope']}
+        receipt=get(api.TABLE,pid,'APPLY#'+rid)
+        if receipt and receipt.get('signature')==signature: return response(True)
         raise api.Problem(409,'Lista zmieniła się. Propozycja nie została zastosowana.','SCOPE_VERSION_CONFLICT')
-    return {'applied':True,'alreadyApplied':False,'appliedVersion':expected+1,**api.scope_response(after)}
+    return response()

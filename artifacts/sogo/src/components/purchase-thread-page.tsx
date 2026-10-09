@@ -321,7 +321,12 @@ function ProposalPreview({
   onUpdatedProposal: () => void;
 }) {
   const appliedVersion = api.appliedProposals[proposal.proposalId] ?? proposal.appliedVersion ?? null;
-  const confirmedApplied = appliedVersion != null || proposal.proposalStatus === 'APPLIED';
+  const confirmedApplied = proposal.proposalStatus === 'APPLIED' || api.appliedProposals[proposal.proposalId] != null;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const appliedIds = new Set(proposal.appliedChangeIds ?? []);
+  const pendingIds = [...proposal.changes.map(c => c.itemId), ...(proposal.rulesChange ? ['__rules__'] : [])].filter(id => !appliedIds.has(id));
+  const selected = selectedIds.filter(id => pendingIds.includes(id));
+  const toggle = (id: string) => setSelectedIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
   const conflicted = api.conflictProposalId === proposal.proposalId;
   const canApply = !confirmedApplied && !conflicted && !api.applyPending && !api.pendingApply;
   const addedCount = proposal.changes.filter((change) => !change.before && Boolean(change.after)).length;
@@ -349,10 +354,20 @@ function ProposalPreview({
         {!proposal.changes.length && !proposal.rulesChange && <span>Brak zmian na liście</span>}
         {proposal.rulesChange && <span>{proposal.changes.length ? ' · ' : ''}zmieniono ustalenia zakupowe</span>}
       </p>
+      {!confirmedApplied && <div className="sticky top-0 z-10 mt-3 flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" disabled={!canApply} checked={pendingIds.length > 0 && selected.length === pendingIds.length} onChange={e => setSelectedIds(e.target.checked ? pendingIds : [])} /> Zaznacz wszystkie</label>
+        <button type="button" disabled={!canApply || !selected.length} onClick={() => api.applyProposal(proposal, selected)} className="rounded-lg bg-primary px-3 py-2 text-xs font-bold disabled:opacity-50">Zatwierdź wybrane ({selected.length})</button>
+        <button type="button" disabled={!canApply} onClick={() => api.applyProposal(proposal)} className="rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-50">Zatwierdź wszystkie ({pendingIds.length})</button>
+        <span className="text-xs text-muted-foreground">Zapisano {confirmedApplied ? proposal.changes.length : appliedIds.size} · pozostało {pendingIds.length}</span>
+      </div>}
       {proposal.changes.length ? (
         <div className="mt-3 space-y-3">
           {proposal.changes.map((change, index) => (
             <article key={`${change.itemId}-${index}`} className="rounded-lg border border-border/70 bg-card p-3">
+              {!confirmedApplied && !appliedIds.has(change.itemId) ? <div className="mb-3 flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-xs"><input type="checkbox" disabled={!canApply} checked={selected.includes(change.itemId)} onChange={() => toggle(change.itemId)} aria-label={`Zaznacz: ${change.after?.name ?? change.before?.name}`} /> Wybierz</label>
+                <button type="button" disabled={!canApply} onClick={() => api.applyProposal(proposal, [change.itemId])} className="rounded-lg bg-primary px-3 py-2 text-xs font-bold disabled:opacity-50">Zatwierdź</button>
+              </div> : <p className="mb-2 text-xs font-bold text-accent">✓ Zatwierdzono</p>}
               <p className="mb-2 break-words text-xs font-semibold">{change.after?.name ?? change.before?.name ?? 'Pozycja materiałowa'}</p>
               <div className="grid grid-cols-2 gap-2">
                 <Snapshot value={change.before} label="Zapisane" />
@@ -372,6 +387,7 @@ function ProposalPreview({
       )}
       {proposal.rulesChange && (
         <div className="mt-3 rounded-lg border border-border/70 bg-card p-3">
+          {!confirmedApplied && !appliedIds.has('__rules__') && <label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" disabled={!canApply} checked={selected.includes('__rules__')} onChange={() => toggle('__rules__')} /> Wybierz zmianę ustaleń zakupowych</label>}
           <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Zmiana zasad zakupowych</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <div className="rounded-md bg-background p-2.5"><p className="mb-1 text-[10px] font-bold text-muted-foreground">ZAPISANE</p><RuleList rules={proposal.rulesChange.before} /></div>
@@ -417,7 +433,7 @@ function ProposalPreview({
           className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground hover:brightness-[0.97] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
         >
           {api.applyPending ? <LoaderCircle size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-          {api.applyPending ? 'Zapisywanie listy…' : 'Zastosuj zmiany'}
+          {api.applyPending ? 'Zapisywanie listy…' : 'Zatwierdź wszystkie pozostałe'}
         </button>
       )}
     </section>
@@ -962,7 +978,7 @@ function WorkspaceDataPanel({
         {tab === 'materials' ? (
           <div className="h-full min-h-0 w-full min-w-0 space-y-4 overflow-y-auto p-3 sm:p-4">
             <SavedScopePanel api={api} />
-            {selectedProposal ? ((selectedProposal.proposalStatus === 'APPLIED' || selectedProposal.appliedVersion != null || api.appliedProposals[selectedProposal.proposalId] != null) ? <details><summary className="cursor-pointer text-xs">Historia zastosowanej propozycji</summary><ProposalPreview proposal={selectedProposal} api={api} onUpdatedProposal={onUpdatedProposal} /></details> : <ProposalPreview proposal={selectedProposal} api={api} onUpdatedProposal={onUpdatedProposal} />) : (
+            {selectedProposal ? ((selectedProposal.proposalStatus === 'APPLIED' || api.appliedProposals[selectedProposal.proposalId] != null) ? <details><summary className="cursor-pointer text-xs">Historia zastosowanej propozycji</summary><ProposalPreview proposal={selectedProposal} api={api} onUpdatedProposal={onUpdatedProposal} /></details> : <ProposalPreview proposal={selectedProposal} api={api} onUpdatedProposal={onUpdatedProposal} />) : (
               <div className="rounded-xl border border-dashed border-border bg-background/55 p-4 text-xs text-muted-foreground">Propozycje zmian pojawią się tutaj po odpowiedzi asystenta.</div>
             )}
           </div>
@@ -1372,4 +1388,5 @@ export function PurchaseThreadPage({ projectId }: Props) {
     </main>
   );
 }
+
 

@@ -50,6 +50,7 @@ export type PurchaseThreadDraftAttachment = {
 };
 
 type PendingApply = {
+  changeIds?: string[];
   proposalId: string;
   requestId: string;
   expectedScopeVersion: number;
@@ -415,7 +416,7 @@ export function usePurchaseThread(projectId: string) {
         conflictProposalId: current.conflictProposalId === input.proposalId ? null : current.conflictProposalId,
         appliedProposals: {
           ...current.appliedProposals,
-          [input.proposalId]: response.appliedVersion ?? response.scope?.version ?? input.expectedScopeVersion,
+          ...(response.proposalStatus === 'PARTIALLY_APPLIED' ? {} : { [input.proposalId]: response.appliedVersion ?? response.scope?.version ?? input.expectedScopeVersion }),
         },
       }));
       void queryClient.invalidateQueries({ queryKey: scopeQueryKey });
@@ -567,7 +568,7 @@ export function usePurchaseThread(projectId: string) {
     setAttachmentError('Wybierz plik ponownie, potwierdź jego rodzaj i dodaj go z menu „Dodaj”.');
   }, []);
 
-  const applyProposal = useCallback((proposal: PurchaseThreadScopeProposal) => {
+  const applyProposal = useCallback((proposal: PurchaseThreadScopeProposal, changeIds?: string[]) => {
     const current = draftRef.current;
     if (!thread || current.pendingApply || applyMutation.isPending) return;
     if (proposal.proposalStatus === 'APPLIED' || current.appliedProposals[proposal.proposalId] != null) return;
@@ -578,12 +579,14 @@ export function usePurchaseThread(projectId: string) {
       proposalId: proposal.proposalId,
       requestId: crypto.randomUUID(),
       expectedScopeVersion: proposal.expectedScopeVersion,
+      changeIds,
     };
     updateDraft({
       pendingApply: {
         proposalId: input.proposalId,
         requestId: input.requestId,
         expectedScopeVersion: input.expectedScopeVersion,
+        changeIds: input.changeIds,
       },
       applyError: null,
       applyErrorProposalId: null,
@@ -602,6 +605,7 @@ export function usePurchaseThread(projectId: string) {
       proposalId: pending.proposalId,
       requestId: pending.requestId,
       expectedScopeVersion: pending.expectedScopeVersion,
+      changeIds: pending.changeIds,
     });
   }, [applyMutation, projectId, thread, updateDraft]);
 
@@ -691,4 +695,5 @@ export function usePurchaseThread(projectId: string) {
     promptForUpdatedProposal,
   };
 }
+
 
