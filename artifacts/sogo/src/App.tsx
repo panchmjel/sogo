@@ -1,3 +1,4 @@
+import { DocumentPreview } from '@/components/document-preview';
 import { ProjectStatistics } from './components/project-statistics';
 import { ProjectPrivacy } from './components/privacy-controls';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -1379,9 +1380,6 @@ function DocumentsDetailPage() {
     retry: false,
     refetchInterval: (query) => analysisRefetchInterval(query.state.data),
   });
-  const downloadMutation = useMutation({
-    mutationFn: () => downloadDocument(projectId, documentId, purchaseAreaId),
-  });
   const analyzeMutation = useMutation({
     mutationFn: () => analyzeDocument(projectId, documentId, purchaseAreaId),
     onSuccess: async () => {
@@ -1407,14 +1405,6 @@ function DocumentsDetailPage() {
     }
   }, [showOfferResult]);
 
-  function handleDownload() {
-    downloadMutation.mutate(undefined, {
-      onSuccess: (result) => {
-        window.open(result.url, '_blank', 'noopener,noreferrer');
-      },
-    });
-  }
-
   return (
       <div className="mx-auto max-w-[1400px] p-5 md:p-8 lg:p-10">
          <div className="mb-6 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -1437,16 +1427,14 @@ function DocumentsDetailPage() {
                     <DocumentTypeSelect projectId={projectId} purchaseAreaId={purchaseAreaId} document={document} />
                   </div>
                   {canStartOfferAnalysis(document) && <button type="button" onClick={() => analyzeMutation.mutate()} disabled={analyzeMutation.isPending} className="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-bold text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-analyze-document"><Sparkles size={16} />{analyzeMutation.isPending ? 'Uruchamianie…' : 'Analizuj ofertę'}</button>}
-                  <button type="button" onClick={handleDownload} disabled={document.status !== 'UPLOADED' || downloadMutation.isPending} className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-download-document"><Download size={16} /> {downloadMutation.isPending ? 'Przygotowanie…' : 'Otwórz oryginał'}</button>
                 </div>
               }
             />
             {isOfferPdf(document) && <div className="mt-5 flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">Status analizy:</span><AnalysisStatusBadge document={document} />{(document.analysisStatus === 'FAILED' || document.analysisStatus === 'RETRY_WAIT') && document.analysisError && <span className="text-xs text-destructive">{document.analysisError}</span>}</div>}
-            <div className="mt-8 grid gap-5 xl:grid-cols-[1fr_1fr]">
-               <div className="rounded-2xl border border-border bg-card/70 p-5"><div className="flex items-center gap-2 border-b border-border pb-4"><FileCheck2 size={17} className="text-accent" /><p className="text-sm font-bold">Oryginał dokumentu</p></div><div className="mt-5 flex items-center justify-between gap-4"><div><p className="text-sm font-semibold">{document.filename}</p><p className="mt-1 text-xs text-muted-foreground">Otwórz plik, aby sprawdzić dane źródłowe.</p></div><button type="button" onClick={handleDownload} disabled={document.status !== 'UPLOADED' || downloadMutation.isPending} className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-bold disabled:opacity-50"><Download size={14} /> Otwórz</button></div></div>
+            <div className="mt-8 space-y-5">
+               <DocumentPreview key={document.documentId} projectId={projectId} purchaseAreaId={purchaseAreaId} document={document} />
                <details className="rounded-2xl border border-border bg-card/70 p-5"><summary className="cursor-pointer text-sm font-bold">Szczegóły dokumentu</summary><div className="mt-4 space-y-3 text-sm"><div className="flex items-center justify-between border-b border-border/70 py-2"><span className="text-muted-foreground">Rozmiar</span><span>{formatDocumentSize(document.size)}</span></div><div className="flex items-center justify-between border-b border-border/70 py-2"><span className="text-muted-foreground">Dodano</span><PolishDate value={document.createdAt} /></div><div className="flex items-center justify-between py-2"><span className="text-muted-foreground">Stan pliku</span><span>{documentStatusLabel(document.status)}</span></div></div></details>
             </div>
-            {downloadMutation.isError && <p className="mt-4 text-sm text-destructive" role="alert">{mutationErrorMessage(downloadMutation.error, 'Nie udało się przygotować pobierania.')}</p>}
             {canAnalyzeOffer(document) && analyzeMutation.isError && <p className="mt-4 text-sm text-destructive" role="alert">{mutationErrorMessage(analyzeMutation.error, 'Nie udało się uruchomić analizy.')}</p>}
             {showOfferResult && analysisMutation.isError && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between" role="alert"><p className="text-sm text-destructive">{analysisErrorMessage(analysisMutation.error)}</p><button type="button" onClick={() => analysisMutation.mutate()} className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 px-3 text-xs font-bold text-destructive hover:bg-destructive/10" data-testid="button-retry-analysis-result">Pobierz wynik ponownie</button></div>}
               {showOfferResult && analysisMutation.isPending && <div className="mt-8"><LoadingState label="Pobieranie zapisanego wyniku…" /></div>}

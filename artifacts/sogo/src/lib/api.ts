@@ -1560,10 +1560,11 @@ export async function uploadApoChatAttachment(
   }, purchaseAreaId));
 }
 
-export function downloadDocument(projectId: string, documentId: string, purchaseAreaId?: string | null, signal?: AbortSignal) {
+export function downloadDocument(projectId: string, documentId: string, purchaseAreaId?: string | null, signal?: AbortSignal, disposition: 'inline' | 'attachment' = 'inline') {
   return apiRequest<{ url: string; expiresIn: number }>('download_document', withPurchaseArea({
     projectId,
     documentId,
+    disposition,
   }, purchaseAreaId), signal);
 }
 

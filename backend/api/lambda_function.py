@@ -320,7 +320,14 @@ def execute_project(subject, pid, body):
             return public(read(docpk, 'DOC#' + did))
     if doc['status'] != 'UPLOADED' or not doc.get('versionId'):
         raise Problem(409, 'Dokument nie jest gotowy do pobrania.')
-    url = S3.generate_presigned_url('get_object', Params={'Bucket': BUCKET, 'Key': doc['objectKey'], 'VersionId': doc['versionId'], 'ResponseContentDisposition': "attachment; filename*=UTF-8''" + quote(doc['filename'], safe='')}, ExpiresIn=300)
+    # Only browser-safe originals are rendered inline; active content stays a download.
+    extension = doc['filename'].rsplit('.', 1)[-1].lower()
+    preview_types = {'pdf': 'application/pdf', 'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'webp': 'image/webp', 'gif': 'image/gif'}
+    disposition = 'inline' if body.get('disposition', 'inline') == 'inline' and extension in preview_types else 'attachment'
+    params = {'Bucket': BUCKET, 'Key': doc['objectKey'], 'VersionId': doc['versionId'], 'ResponseContentDisposition': disposition + "; filename*=UTF-8''" + quote(doc['filename'], safe='')}
+    if extension in preview_types:
+        params['ResponseContentType'] = preview_types[extension]
+    url = S3.generate_presigned_url('get_object', Params=params, ExpiresIn=300)
     return {'url': url, 'expiresIn': 300}
 
 def lambda_handler(event, context):
