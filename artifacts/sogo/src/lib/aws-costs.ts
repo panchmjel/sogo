@@ -1,3 +1,18 @@
+export type AnthropicCosts = {
+  status: 'OK' | 'PARTIAL' | 'UNAVAILABLE';
+  totalUsd: string | null;
+  trackingSince: string;
+};
+
+export function parseAnthropicCosts(value: unknown): AnthropicCosts | null {
+  if (!isObject(value) || !['OK', 'PARTIAL', 'UNAVAILABLE'].includes(String(value.status))) return null;
+  if (value.currency !== 'USD' || value.scope !== 'APPLICATION' || value.estimated !== true) return null;
+  if (value.totalUsd !== null && !isUsdAmount(value.totalUsd)) return null;
+  if (value.status !== 'UNAVAILABLE' && value.totalUsd === null) return null;
+  if (typeof value.trackingSince !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.trackingSince)) return null;
+  return value as unknown as AnthropicCosts;
+}
+
 export type AdminAwsCostsResponse = {
   status: 'OK' | 'UNAVAILABLE';
   month: string;
@@ -11,6 +26,7 @@ export type AdminAwsCostsResponse = {
 };
 
 export type AdminAwsCostsQueryData = {
+  anthropic?: AnthropicCosts | null;
   cost: AdminAwsCostsResponse | null;
   unavailable: boolean;
 };
@@ -61,8 +77,12 @@ export function makeAdminAwsCostsQueryData(
   response: unknown,
   previous?: AdminAwsCostsQueryData,
 ): AdminAwsCostsQueryData {
+  const anthropic = isObject(response) ? parseAnthropicCosts(response.anthropic) : null;
+  if (isObject(response) && response.status === 'UNAVAILABLE') {
+    return { cost: previous?.cost ? { ...previous.cost, stale: true } : null, unavailable: true, anthropic };
+  }
   const parsed = parseAdminAwsCosts(response);
-  if (parsed.status === 'OK') return { cost: parsed, unavailable: false };
+  if (parsed.status === 'OK') return { cost: parsed, unavailable: false, anthropic };
 
   const lastAvailable = previous?.cost?.status === 'OK' ? previous.cost : null;
   return {
@@ -109,3 +129,4 @@ export function formatAwsUsd(value: string) {
 export function formatAiAwsUsd(value: string | null) {
   return value === null ? 'Brak osobnych danych' : formatAwsUsd(value);
 }
+
