@@ -142,7 +142,12 @@ def handle(api,subject,pid,body):
         refs=sorted(rows(api.TABLE,pid,'TURN#'+tid+'#'),key=lambda r:int(r['sequence']))
         for ref in refs[-10:]:
             old=get(api.TABLE,pid,'AI#'+ref['jobId']); entry={'message':old['message'],'status':old['status']}
-            if old.get('resultKey'): entry['answer']=read_json(api.S3,api.BUCKET,old['resultKey']).get('text','')
+            if old.get('resultKey'):
+                previous=read_json(api.S3,api.BUCKET,old['resultKey'])
+                entry['answer']=previous.get('text','')
+                if previous.get('reviewStatus')=='NEEDS_CLARIFICATION':
+                    entry['draftPlan']=previous.get('draftPlan',{})
+                    entry['reviewIssues']=previous.get('reviewIssues',[])
             history.append(entry)
         payload={'excludedDocuments':excluded,'scope':scope,'documentation':selected,'history':history,'omittedHistoryTurns':max(0,len(refs)-10),'message':message,'dateUTC':now()[:10]}
         if direct: payload['directSources']=direct_sources
