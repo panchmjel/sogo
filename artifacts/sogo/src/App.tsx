@@ -1,3 +1,4 @@
+import { ProjectStatistics } from './components/project-statistics';
 import { ProjectPrivacy } from './components/privacy-controls';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -737,10 +738,7 @@ function ProjectsPage() {
           </div>
         )}
       </div>
-      <div className="mt-6 grid gap-3 md:grid-cols-3">
-        <Metric label="Projekty dostępne" value={hasConfiguration && !projectsQuery.isError ? String(projects.length) : '—'} icon={FolderKanban} />
-         <Metric label="Dokumenty źródłowe" value="—" icon={Files} />
-      </div>
+      <ProjectStatistics projects={projects} userId={session.authUserId} ready={hasConfiguration && projectsQuery.isSuccess} failed={projectsQuery.isError || !hasConfiguration} />
     </div>
   );
 }
