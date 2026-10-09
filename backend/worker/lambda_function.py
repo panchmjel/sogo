@@ -20,40 +20,9 @@ import boto3
 from botocore.config import Config
 
 S3 = boto3.client("s3")
-BEDROCK = boto3.client("bedrock-runtime", config=Config(
-    connect_timeout=10, read_timeout=240,
-    retries={"mode": "standard", "total_max_attempts": 1}
-))
 def converse_with_retry(context=None, **kwargs):
-    """Retry explicit transient service failures, retaining time for one full call.
-
-    SDK retries stay disabled so attempts cannot multiply behind this budget.
-    Transport timeouts are left to the queue: the model may already have run.
-    """
-    started = time.monotonic()
-    for attempt in range(4):
-        try:
-            return BEDROCK.converse(**kwargs)
-        except ClientError as exc:
-            code = exc.response.get('Error', {}).get('Code')
-            if code not in {'ServiceUnavailableException', 'ThrottlingException',
-                            'InternalServerException', 'ModelNotReadyException'} or attempt == 3:
-                raise
-            delay = random.uniform(2 ** attempt, 2 ** (attempt + 1))
-            headers = exc.response.get('ResponseMetadata', {}).get('HTTPHeaders', {})
-            try:
-                delay = max(delay, float(headers.get('retry-after', 0)))
-            except (TypeError, ValueError):
-                raise exc  # Unknown server delay: leave retry to the queue.
-            remaining = (context.get_remaining_time_in_millis() / 1000
-                         if context is not None and hasattr(context, 'get_remaining_time_in_millis')
-                         else 300 - (time.monotonic() - started))
-            # 10s connect + 240s read + 20s for checkpoint and lease release.
-            if delay > 30 or remaining < 270 + delay:
-                raise
-            logging.getLogger(__name__).warning(
-                'Bedrock retry: code=%s attempt=%s/4 delay=%.2fs', code, attempt + 2, delay)
-            time.sleep(delay)
+    from anthropic_compat import converse
+    return converse(context=context, **kwargs)
 
 
 PROMPT_VERSION = "offer-ocr-v2-compact-refs"
@@ -312,7 +281,7 @@ def pilot_handler(event, context):
         if saved.get('sourceSha256') != hashlib.sha256(source).hexdigest():
             raise ValueError('Zmienione źródło analizy')
         return finish_offer(bucket, prefix, saved, records, model_invoked=False)
-    result = BEDROCK.converse(
+    result = converse_with_retry(
         modelId=model, system=[{"text": SYSTEM + "\nCurrent UTC date: " + datetime.now(timezone.utc).date().isoformat()}],
         messages=[{"role": "user", "content": [{"text": source_text}]}],
         inferenceConfig={"maxTokens": 16000}
@@ -520,6 +489,9 @@ def queue_job(message, context):
         if started_at and (datetime.now(timezone.utc) - datetime.fromisoformat(started_at)).total_seconds() > 86400:
             save(analysisStatus='FAILED', analysisError='Przekroczono 24 godziny przetwarzania; wymagana kontrola zadania.')
             return
+        from anthropic_compat import run_offer
+        run_offer(doc,ids,context,TABLE,S3,bucket,save)
+        return
         if not doc.get('textractJobId'):
             started = TEXTRACT.start_document_analysis(
                 DocumentLocation={'S3Object': {'Bucket': bucket, 'Name': doc['objectKey'], 'Version': doc['versionId']}},
@@ -932,6 +904,8 @@ def project_ai_job(message, context):
             save(status='FAILED', errorCode='EXECUTION_BUDGET_EXCEEDED', errorMessage='Przerwano zadanie po przekroczeniu limitu prób. Zapisane wyniki pozostają dostępne.')
             return
         job = TABLE.get_item(Key=key, ConsistentRead=True)['Item']
+        from anthropic_compat import bind_job
+        bind_job(job['jobId'])
         if job.get('kind') == 'PURCHASE_CONVERSATION':
             from conversation import run
             run(job,TABLE,S3,bucket,converse_with_retry,context,save,os.environ['BEDROCK_MODEL_ID'],ContinueComparison)

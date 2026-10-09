@@ -269,7 +269,7 @@ def run(job,table,s3,bucket,converse,context,save,model,continue_exception):
             save(status='FAILED',stage='FAILED',errorCode='DOCUMENT_READ_FAILED',publicErrorMessage=document_read_error(child)); return
         if child['status']!='DONE': save(stage='READING_DOCUMENTS'); raise continue_exception()
         result=read_json(s3,bucket,child['resultKey'])
-        if result.get('incomplete') or result.get('mergeNeedsReview'): save(status='FAILED',stage='FAILED',errorCode='DOCUMENT_READ_INCOMPLETE',publicErrorMessage='Odczyt jest częściowy. Zapisane wyniki są dostępne w dokumentacji; nie zatwierdzono niepełnej listy.'); return
+        if result.get('incomplete') or result.get('mergeNeedsReview'): save(status='FAILED',stage='FAILED',errorCode='DOCUMENT_READ_INCOMPLETE'); return
         payload['documentation'].append({'jobId':childid,'result':result})
     if len(dumps(payload).encode())>200000: save(status='FAILED',stage='FAILED',errorCode='CONTEXT_TOO_LARGE'); return
     evidence=evidence_for(payload)
@@ -277,13 +277,12 @@ def run(job,table,s3,bucket,converse,context,save,model,continue_exception):
     calculate=answer_calculations.requested(payload['message'])
     if calculate: model_input=dict(model_input,history=[])
     effective_rules=answer_calculations.instructions() if calculate else RULES+'\n'+answer_calculations.RULES
-    model=os.environ.get('CONVERSATION_MODEL_ID') or model
     save(stage='THINKING')
     prefix=f"processed/project-ai/{job['projectId']}/{job['jobId']}/conversation"
     rawkey=prefix+'/response.json'
     if job.get('conversationResponseKey'): response=read_json(s3,bucket,job['conversationResponseKey'])
     else:
-        response=converse(context,modelId=model,system=[{'text':effective_rules}],messages=[{'role':'user','content':[{'text':dumps(model_input)}]}],inferenceConfig={'maxTokens':12000},**({'additionalModelRequestFields':{'thinking':{'type':'adaptive'},'output_config':{'effort':'low'}}} if 'anthropic.claude' in model and 'haiku' not in model else {}))
+        response=converse(context,modelId=model,system=[{'text':effective_rules}],messages=[{'role':'user','content':[{'text':dumps(model_input)}]}],inferenceConfig={'maxTokens':12000},**({'additionalModelRequestFields':{'thinking':{'type':'adaptive'},'output_config':{'effort':'low'}}} if 'anthropic.claude' in model else {}))
         write_json(s3,bucket,rawkey,response); save(conversationResponseKey=rawkey)
     save(stage='PREPARING_RESULT')
     try:
@@ -309,7 +308,7 @@ def run(job,table,s3,bucket,converse,context,save,model,continue_exception):
             if exc.response['Error']['Code']!='ConditionalCheckFailedException': raise
         result['proposalId']=job['jobId']
     result['findings']=[{'findingId':eid,**entry} for eid,entry in evidence.items() if entry['category']=='documentationIssues']
-    result['modelId']=model; result['usage']=response.get('usage',{}); result['createdAt']=now()
+    result['usage']=response.get('usage',{}); result['createdAt']=now()
     resultkey=prefix+'/result.json'; write_json(s3,bucket,resultkey,result)
     save(status='DONE',stage='DONE',resultKey=resultkey,completedAt=now(),errorMessage='')
 

@@ -1,5 +1,3 @@
-import documentation_facts
-import documentation_batches
 import procurement_quality
 from document_types import require as require_document_type
 """Staged, version-pinned documentation extraction; atomic scope publication."""
@@ -167,9 +165,7 @@ def parse(response, compact=False):
             fragments.extend(x['text'] for x in block['citationsContent'].get('content',[]) if 'text' in x)
     # Citation boundaries may split a JSON string; do not insert extra newlines.
     s = ''.join(fragments).strip()
-    fences=re.findall(r'```(?:json)?\s*\n(.*?)```',s,flags=re.DOTALL|re.IGNORECASE)
-    if len(fences)==1: s=fences[0].strip()
-    elif fences: raise ValueError('Odpowiedź zawiera kilka bloków danych.')
+    if s.startswith('```') and s.endswith('```'): s = s.split('\n',1)[1].rsplit('```',1)[0]
     try: result = json.loads(s)
     except (ValueError, TypeError) as exc:
         raise ValueError('Nie udało się odczytać odpowiedzi. Zachowaliśmy zakończone etapy.') from exc
@@ -201,8 +197,6 @@ def extraction(data,ref,index):
                 except ValueError: q = None
                 entry.update(name=text(row.get('name'),1000),quantity=q,unit=unit(row.get('unit')))
                 procurement_quality.enrich(entry,row)
-                if row.get("_factCalculation"):
-                    entry["source"]["calculation"]=row["_factCalculation"]
             else:
                 entry['text'] = text(row.get('text'))
                 if key=='issues': entry['kind']=row.get('kind') if row.get('kind') in ('GAP','CONFLICT','UNCLEAR') else 'UNCLEAR'
@@ -362,48 +356,26 @@ def run(job,table,s3,bucket,converse,context,save,model,continue_exception):
         return anthropic_direct.run_documentation(job,table,s3,bucket,context,save)
     prefix=f"processed/project-ai/{job['projectId']}/{job['jobId']}/documentation"
     done=job.get('documentationStages',{})
-    facts_mode=job.get('factsVersion')==documentation_facts.VERSION or not done
-    if facts_mode and not job.get('factsVersion'):
-        save(factsVersion=documentation_facts.VERSION)
     attempts=job.get('documentationAttempts',{})
     def call(stage,rules,content,validate,compact=False):
         if stage in done: return load(s3,bucket,done[stage])
         attempt=int(attempts.get(stage,0))+1
         save(activeStage=stage)
         previous_error=job.get('documentationStageErrors',{}).get(stage)
-        if previous_error and previous_error.get('stopReason')=='end_turn':
-            # Reparse a stored complete response before paying for another inference.
-            try:
-                cached=load(s3,bucket,prefix+'/'+stage+'-attempt-'+str(previous_error['attempt'])+'-diagnostic.json')
-                recovered=parse(cached,compact=compact)
-                if facts_mode and stage.startswith("document-"): recovered=documentation_facts.normalize(recovered)
-                validate(recovered)
-            except (ValueError,TypeError,KeyError):
-                pass
-            else:
-                key=prefix+'/'+stage+'.json';write(s3,bucket,key,recovered)
-                save(documentationStages=dict(done,**{stage:key}))
-                raise continue_exception()
         if previous_error:
             content=content+[{'text':'Poprzednia próba nie została przyjęta: '+previous_error['message']+'. Popraw plan; nie przepisuj danych źródłowych.'}]
-        if facts_mode and stage.startswith('document-'): rules += documentation_facts.RULES
         response=converse(context,modelId=model,system=[{'text':rules}],
-            messages=[{'role':'user','content':content}],inferenceConfig={'maxTokens':6000 if '-batch-' in stage else 12000},
-            **({'additionalModelRequestFields': {'thinking': {'type': 'adaptive' if compact else 'disabled'}, 'output_config': {'effort': 'low'}}} if 'anthropic.claude-sonnet-5' in model or (compact and 'anthropic.claude' in model) else {}))
+            messages=[{'role':'user','content':content}],inferenceConfig={'maxTokens':12000})
         write(s3,bucket,prefix+'/'+stage+'-attempt-'+str(attempt)+'-diagnostic.json',response)
         try:
             parsed=parse(response,compact=compact)
-            if facts_mode and stage.startswith("document-"): parsed=documentation_facts.normalize(parsed)
             validate(parsed)
         except (ValueError,TypeError,KeyError) as exc:
             failure={'stage':stage,'attempt':attempt,'stopReason':response.get('stopReason'),'message':str(exc)[:1000],'usage':response.get('usage',{})}
             write(s3,bucket,prefix+'/'+stage+'-attempt-'+str(attempt)+'-error.json',failure)
             logging.getLogger(__name__).warning('Documentation stage failed job=%s stage=%s stop=%s reason=%s',job['jobId'],stage,response.get('stopReason'),str(exc)[:1000])
             save(documentationAttempts=dict(attempts,**{stage:attempt}),documentationStageErrors=dict(job.get('documentationStageErrors',{}),**{stage:failure}))
-            if stage.startswith('document-') and '-batch-' not in stage and response.get('stopReason') == 'max_tokens':
-                save(documentationSplit=list(dict.fromkeys(job.get('documentationSplit',[])+[stage])))
-                raise continue_exception()
-            if attempt < 2 and '-batch-' not in stage: raise continue_exception()
+            if attempt < 2: raise continue_exception()
             # Preserve other documents and make incompleteness explicit, never fabricate rows.
             parsed={'materials':[],'requirements':[],'issues':[], '_failure':True}
         key=prefix+'/'+stage+'.json';write(s3,bucket,key,parsed)
@@ -418,32 +390,11 @@ def run(job,table,s3,bucket,converse,context,save,model,continue_exception):
     for i,ref in enumerate(job['sources']):
         stage='document-'+str(i)
         content=[] if stage in done else [{'text':dump({'task':job['description'],'purchaseRules':job.get('purchaseRules',[]),'availableDocuments':[r['filename'] for r in job['sources']]})}]+blocks(store,[ref])
-        if facts_mode and content:
-            content=documentation_facts.visual_content(content)
         for block in content:
             if 'document' in block and 'anthropic.claude' in model: block['document']['citations']={'enabled':True}
-        if stage not in done and stage in job.get('documentationSplit',[]):
-            parts=[]
-            for batch in range(documentation_batches.MAX_BATCHES):
-                checkpoint=stage+'-batch-'+str(batch)
-                already=[{'kind':k,'page':r.get('page'),'name':r.get('name',r.get('text','')),'occurrenceId':r.get('occurrenceId')} for part in parts for k in ('materials','requirements','issues') for r in part[k]]
-                def validate_batch(value):
-                    documentation_batches.validate(value)
-                    extraction(value,ref,i)
-                part=call(checkpoint,EXTRACT_RULES+documentation_batches.RULES,
-                    content+[{'text':dump({'alreadyRead':already,'batch':batch+1})}],validate_batch)
-                parts.append(part)
-                if part.get('_failure') or not part.get('hasMore'): break
-                # A repeated batch cannot advance coverage; stop without another model call.
-                if len(parts)>1 and len(documentation_batches.combine(parts)['materials'])+len(documentation_batches.combine(parts)['requirements'])+len(documentation_batches.combine(parts)['issues']) == sum(len(documentation_batches.combine(parts[:-1])[k]) for k in ('materials','requirements','issues')): break
-            data=documentation_batches.combine(parts)
-            key=prefix+'/'+stage+'.json';write(s3,bucket,key,data)
-            save(documentationStages=dict(done,**{stage:key}))
-            raise continue_exception()
-        else:
-            data=call(stage,EXTRACT_RULES+'\nZwracaj zwięzły JSON. quote i roleReason do 160 znaków; text do 300 znaków. Bez powtarzania opisów i uwag o każdej ilości null.',content,lambda data:extraction(data,ref,i))
-        if data.get('_failure') or data.get('_partial'): failed.append(public_refs([ref])[0])
-        if not data.get('_failure'): evidence.update(extraction(data,ref,i))
+        data=call(stage,EXTRACT_RULES,content,lambda data:extraction(data,ref,i))
+        if data.get('_failure'): failed.append(public_refs([ref])[0])
+        else: evidence.update(extraction(data,ref,i))
     evidence['TASK']={'id':'TASK','type':'instruction','text':job['description'],
         'source':{'type':'USER_DESCRIPTION','text':job['description'],'providedBy':job['createdBy'],'verification':'USER_INPUT'}}
     def legacy_merge():
@@ -485,10 +436,8 @@ def run(job,table,s3,bucket,converse,context,save,model,continue_exception):
                   requiresReview=True,mergeNeedsReview=bool(data.get('_failure')))
     # Immutable extraction exists before any scope write. Retried publication is idempotent.
     resultkey=prefix+'/result.json'
-    result['factsVersion']=documentation_facts.VERSION if facts_mode else 'legacy'
     write(s3,bucket,resultkey,result)
     applied={'applied':False,'message':'Sprawdź odczyt i zatwierdź dodanie do listy materiałów.'}
-    result['factsVersion']=documentation_facts.VERSION if facts_mode else 'legacy'
-    if not facts_mode and job.get('applyAutomatically',True) and not result['incomplete']:
+    if job.get('applyAutomatically',True) and not result['incomplete']:
         applied=publish(table,job,result,int(job['expectedVersion']),job['mode'],job['createdBy'])
     save(status='DONE',resultState=result['resultState'],canApply=result['canApply'],resultKey=resultkey,completedAt=stamp(),errorMessage='',**applied)

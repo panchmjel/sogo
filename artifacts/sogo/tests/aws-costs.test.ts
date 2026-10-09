@@ -92,3 +92,18 @@ test('missing or malformed amount is rejected rather than coerced to zero', () =
   assert.throws(() => parseAdminAwsCosts({ ...validCosts, totalUsd: 'not-a-number' }));
   assert.throws(() => parseAdminAwsCosts({ ...validCosts, aiUsd: undefined }));
 });
+
+test('Anthropic remains available when AWS billing is unavailable', () => {
+  const result = makeAdminAwsCostsQueryData({status: 'UNAVAILABLE', month: '2026-10', anthropic: {
+    status: 'OK', currency: 'USD', totalUsd: '0.09555', scope: 'APPLICATION', estimated: true, trackingSince: '2026-10-09',
+  }});
+  assert.equal(result.cost, null);
+  assert.equal(result.anthropic?.totalUsd, '0.09555');
+});
+
+test('Unknown Anthropic price is never presented as zero', () => {
+  const result = makeAdminAwsCostsQueryData({status: 'UNAVAILABLE', month: '2026-10', anthropic: {
+    status: 'UNAVAILABLE', currency: 'USD', totalUsd: null, scope: 'APPLICATION', estimated: true, trackingSince: '2026-10-09',
+  }});
+  assert.equal(result.anthropic?.totalUsd, null);
+});

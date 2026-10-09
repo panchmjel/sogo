@@ -102,6 +102,9 @@ def run(message,context,table,s3,sqs,textract,converse,receive_count=1):
         if item['status'] in ('READY','FAILED'):return
         age=(datetime.now(timezone.utc)-datetime.fromisoformat(item['analysisStartedAt'])).total_seconds()
         if age>86400:save(status='FAILED',analysisError='Odczyt trwał zbyt długo. Spróbuj ponownie.');return
+        from anthropic_compat import run_invoice
+        run_invoice(item,aid,context,table,s3,service.bucket,save)
+        return
         if not item.get('textractJobId'):
             job=textract.start_document_analysis(DocumentLocation={'S3Object':{'Bucket':service.bucket,'Name':item['objectKey'],'Version':item['versionId']}},FeatureTypes=['TABLES'],ClientRequestToken=aid)
             save(textractJobId=job['JobId'],status='OCR');item['textractJobId']=job['JobId']
