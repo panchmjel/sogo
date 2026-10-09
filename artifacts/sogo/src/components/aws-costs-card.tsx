@@ -14,7 +14,7 @@ import {
   type AdminAwsCostsQueryData,
 } from '@/lib/aws-costs';
 
-const AWS_COSTS_STALE_TIME = 6 * 60 * 60 * 1000;
+const AWS_COSTS_STALE_TIME = 60 * 1000;
 
 function useDesktopSidebar() {
   const [desktop, setDesktop] = useState(() => (
@@ -71,6 +71,7 @@ export function AwsCostsCard({
   const view = getAdminAwsCostsView(query.data, query.isError);
   const loading = enabled && query.isPending;
   const cost = view.cost;
+  const anthropic = query.data?.anthropic;
 
   return (
     <section
@@ -81,7 +82,7 @@ export function AwsCostsCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 id="aws-costs-card-title" className="text-xs font-bold leading-5 text-sidebar-foreground">
-            Koszty AWS — ten miesiąc
+            Koszty — ten miesiąc
           </h2>
           {cost && <p className="mt-0.5 font-mono text-[9px] text-sidebar-foreground/45">{cost.month}</p>}
         </div>
@@ -91,6 +92,7 @@ export function AwsCostsCard({
       {cost ? (
         <>
           <p className="mt-3 font-display text-2xl font-bold leading-none tracking-tight text-sidebar-foreground" data-testid="text-aws-cost-total">
+            <span className="mb-1 block text-xs font-normal">AWS</span>
             {formatAwsUsd(cost.totalUsd)}
           </p>
           <p className="mt-2 text-[10px] leading-4 text-sidebar-foreground/70" data-testid="text-aws-cost-ai">
@@ -117,9 +119,22 @@ export function AwsCostsCard({
         <p className="mt-3 text-[10px] text-sidebar-foreground/60" role="status">Otwórz menu, aby wczytać dane</p>
       )}
 
+      <div className="mt-3 border-t border-sidebar-border pt-3" data-testid="anthropic-costs">
+        <p className="text-xs font-semibold text-sidebar-foreground">Anthropic — aplikacja</p>
+        <p className="mt-1 text-xl font-bold text-sidebar-foreground">
+          {anthropic && anthropic.status !== 'UNAVAILABLE' && anthropic.totalUsd !== null
+            ? formatAwsUsd(anthropic.totalUsd) : 'Brak danych'}
+        </p>
+        <p className="mt-1 text-[10px] text-sidebar-foreground/65">
+          Szacunek{anthropic ? ` od ${anthropic.trackingSince}` : ''}. Nie obejmuje wcześniejszych zapytań ani innych aplikacji.
+          {anthropic?.status === 'PARTIAL' ? ' Część zapytań nie została wyceniona.' : ''}
+          {query.isError ? ' Ostatnie dostępne dane.' : ''}
+        </p>
+      </div>
       <p className="mt-3 border-t border-sidebar-border pt-2.5 text-[9px] leading-4 text-sidebar-foreground/45">
         Całe konto AWS. Dane aktualizowane z opóźnieniem.
       </p>
     </section>
   );
 }
+
