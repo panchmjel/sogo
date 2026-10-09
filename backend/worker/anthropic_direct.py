@@ -46,14 +46,14 @@ def snapshots(docs, chosen):
 def content(s3,bucket,refs):
     import pymupdf as fitz
     out=[]; manifest=[]; pages=0; total=0
-    for ref in refs:
+    for ref in sorted(refs, key=lambda x: x['documentId']):
         r=s3.get_object(Bucket=bucket,Key=ref['objectKey'],VersionId=ref['versionId'])
         try: data=r['Body'].read(22_000_001)
         finally:r['Body'].close()
         total+=len(data)
         if len(data)>22_000_000 or total>22_000_000: raise DirectError('CONTEXT_TOO_LARGE','Dokumenty przekraczają limit jednej wiadomości. Wybierz mniejszy zestaw plików.')
         mime=ref['contentType']; name=ref['filename']; docid=ref['documentId']; count=1
-        out.append({'type':'text','text':'Dokument źródłowy: '+json.dumps({'documentId':docid,'filename':name},ensure_ascii=False)})
+        out.append({'type':'text','text':'Dokument źródłowy: '+json.dumps({'documentId':docid,'filename':name,'versionId':ref['versionId']},ensure_ascii=False,sort_keys=True)})
         if mime=='application/pdf':
             with fitz.open(stream=data,filetype='pdf') as pdf:
                 if pdf.is_encrypted: raise DirectError('ENCRYPTED_PDF','Plik PDF jest zabezpieczony hasłem: '+name)
@@ -104,8 +104,8 @@ def run_conversation(job,table,s3,bucket,context,save):
             save(stage='READING_DOCUMENTS')
             blocks,manifest=content(s3,bucket,refs)
             c.write_json(s3,bucket,prefix+'/manifest.json',manifest)
-            blocks.append({'type':'text','text':c.dumps({k:v for k,v in payload.items() if k not in ('directSources','documentation')})})
-            body={'model':model,'max_tokens':12000,'system':RULES,'messages':[{'role':'user','content':blocks}]}
+            from prompt_cache import conversation_body
+            body=conversation_body(model,RULES,blocks,c.dumps({k:v for k,v in payload.items() if k not in ('directSources','documentation')}))
             # Validate size before marking a paid attempt. Never retry an ambiguous call.
             if len(json.dumps(body).encode())>30_000_000: raise DirectError('CONTEXT_TOO_LARGE','Wybierz mniej dokumentów w tej wiadomości.')
             if context.get_remaining_time_in_millis()<200000: raise DirectError('TIME_BUDGET','Brak czasu na bezpieczne rozpoczęcie odczytu. Ponów wiadomość.')
