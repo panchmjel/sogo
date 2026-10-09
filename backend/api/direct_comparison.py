@@ -41,27 +41,6 @@ def build(plan,payload,jid,manifest):
     comparison={'id':jid,'scopeVersion':scope.get('version',0),'offers':offers,'rows':rows,'commonTotals':totals,'pricedCount':len(common),'requiredCount':len(rows),'requiresReview':True}
     return {'type':'ANSWER','text':str(plan.get('text') or 'Porównanie zapisane. Pozycje bez ilości lub ceny pozostają do ustalenia.'),'changes':[],'findings':[],'comparison':comparison,'expectedScopeVersion':scope.get('version',0)}
 
-def workbook(c):
-    """Small XLSX with literal strings (no formula injection), preserving missing values."""
-    ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'
-    rows=[['APO – porównanie ofert'],['Wersja listy',c['scopeVersion']],['Pozycja','Ilość','Jednostka',c['offers'][0]['supplier']+' – cena netto','Wartość netto',c['offers'][1]['supplier']+' – cena netto','Wartość netto','Uwagi / źródła']]
-    for r in c['rows']:
-        a,b=r['quotes'];rows.append([r['name'],number(r['quantity']) if r['quantity'] is not None else 'Do ustalenia',r['unit'],number(a['unitNet']),number(a['net']),number(b['unitNet']),number(b['net']),' | '.join(f"{o['filename']}, str. {x['page']}: {x['note']} {x['quote']}" for o,x in zip(c['offers'],r['quotes']))])
-    rows.append(['Suma tylko wspólnych wycenionych pozycji',f"{c['pricedCount']} z {c['requiredCount']}",None,None,number(c['commonTotals'][0]),None,number(c['commonTotals'][1])])
-    rows.append(['Brak wartości nie oznacza zera. Transport i inne opłaty nie są doliczone. Dopasowania wymagają sprawdzenia.'])
-    sheet=E.Element('worksheet',xmlns=ns);data=E.SubElement(sheet,'sheetData')
-    for i,row in enumerate(rows,1):
-        rr=E.SubElement(data,'row',r=str(i))
-        for j,value in enumerate(row):
-            if value is None:continue
-            cell=E.SubElement(rr,'c',r=f'{chr(65+j)}{i}')
-            if isinstance(value,(Decimal,int)):E.SubElement(cell,'v').text=str(value)
-            else:cell.set('t','inlineStr');E.SubElement(E.SubElement(cell,'is'),'t').text=str(value)
-    buf=io.BytesIO()
-    with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
-        z.writestr('[Content_Types].xml','<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
-        z.writestr('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
-        z.writestr('xl/workbook.xml','<workbook xmlns="'+ns+'" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="APO" sheetId="1" r:id="rId1"/></sheets></workbook>')
-        z.writestr('xl/_rels/workbook.xml.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
-        z.writestr('xl/worksheets/sheet1.xml',E.tostring(sheet,encoding='utf-8',xml_declaration=True))
-    return buf.getvalue()
+def workbook(c, project_name="", created_at=""):
+    from apo_form_export import workbook as export_form
+    return export_form(c, project_name, created_at)

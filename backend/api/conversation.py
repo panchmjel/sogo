@@ -95,7 +95,9 @@ def handle(api,subject,pid,body):
             raise api.Problem(404,'Nie znaleziono zapisanego porównania.')
         result=read_json(api.S3,api.BUCKET,saved['resultKey'])
         if not result.get('comparison'):raise api.Problem(404,'Ta odpowiedź nie zawiera zapisanego porównania.')
-        return {'fileName':'APO-'+saved['jobId']+'.xlsx','base64':base64.b64encode(workbook(result['comparison'])).decode(),'contentType':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}
+        from access_control import Access
+        project=Access(api.TABLE).projects().get(pid,{})
+        return {'fileName':'APO-'+saved['jobId']+'.xlsx','base64':base64.b64encode(workbook(result['comparison'],project.get('name',''),saved.get('createdAt',''))).decode(),'contentType':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}
     if action=='apply_purchase_proposal': return apply(api,subject,pid,tid,body)
     rid=api.identifier(body.get('requestId')); jid=ident(subject,pid,tid,rid)
     message=body.get('message')
