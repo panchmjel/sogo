@@ -430,7 +430,7 @@ function RuleList({ rules }: { rules: string[] }) {
   ) : <p className="text-xs italic text-muted-foreground">Brak zasad</p>;
 }
 
-function Findings({ findings }: { findings: unknown[] }) {
+function Findings({ findings = [] }: { findings?: unknown[] }) {
   if (!findings.length) return null;
   return (
     <details className="mt-3 rounded-lg border border-border/70 bg-background/60">
