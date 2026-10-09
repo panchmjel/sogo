@@ -20,7 +20,8 @@ class Directory:
             'role':'ADMIN' if anchor else profile.get('role','USER'),
             'enabled':True if anchor else profile.get('enabled',False),
             'cognitoEnabled':user.get('Enabled',False),'loginStatus':user.get('UserStatus','UNKNOWN'),
-            'isPrimaryAdmin':anchor,'configured':anchor or bool(profile)}
+            'isPrimaryAdmin':anchor,'configured':anchor or bool(profile),
+            'lastLoginAt':display.get('lastLoginAt')}
     def handle(self,subject,body):
         self.access.admin(subject)
         action=body['action']

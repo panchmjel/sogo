@@ -400,6 +400,11 @@ export function UsersAdminPage() {
                       {user.isPrimaryAdmin && <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-foreground">Główny administrator</span>}
                     </div>
                     {user.name?.trim() && <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p>}
+                    <p className="mt-2 text-xs text-muted-foreground" data-testid={`last-login-${user.userId}`}>
+                      Ostatnie logowanie: {user.lastLoginAt && !Number.isNaN(Date.parse(user.lastLoginAt))
+                        ? <time dateTime={user.lastLoginAt}>{new Intl.DateTimeFormat('pl-PL', { timeZone: 'Europe/Warsaw', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(user.lastLoginAt))} (czas polski)</time>
+                        : 'Brak danych o logowaniu'}
+                    </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-bold text-foreground">{roleLabel(user.role)}</span>
                       <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${accountStatusTone(user)}`} data-testid={`status-user-${user.userId}`}>

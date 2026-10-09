@@ -344,6 +344,8 @@ def lambda_handler(event, context):
         if not isinstance(body, dict):
             raise Problem(400, 'Oczekiwany obiekt JSON.')
         data = execute(subject, body)
+        from login_activity import record as record_login
+        record_login(TABLE, subject, claims)
     except Problem as exc:
         status, data = exc.status, {'error': exc.message}
         if exc.code:

@@ -38,6 +38,7 @@ export type AdminUser = {
   userId: string;
   email: string;
   name?: string | null;
+  lastLoginAt?: string | null;
   role: ApiRole;
   enabled: boolean;
   cognitoEnabled: boolean;
@@ -1920,5 +1921,4 @@ export function importComparisonScopeOffer(
 export function exportThreadComparison(projectId: string, threadId: string, jobId: string, purchaseAreaId?: string | null) {
   return apiRequest<{fileName: string; base64: string; contentType: string}>('export_thread_comparison', withPurchaseArea({projectId, threadId, jobId}, purchaseAreaId));
 }
-
 
