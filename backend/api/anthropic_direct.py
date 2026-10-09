@@ -37,7 +37,7 @@ def request(path, body=None, timeout=180):
 def snapshots(docs, chosen):
     if len(chosen)>24: raise ValueError('Wybierz maksymalnie 24 pliki.')
     refs=[]
-    for did in sorted(chosen):
+    for did in sorted(chosen, key=lambda d: (docs[d].get('createdAt',''), d)):
         d=docs[did]
         if not d.get('versionId') or not d.get('objectKey'): raise ValueError('Poczekaj na zakończenie przesyłania plików.')
         refs.append({k:d.get(k) for k in ('documentId','filename','objectKey','versionId','contentType','size')})
@@ -101,7 +101,7 @@ def run_conversation(job,table,s3,bucket,context,save):
             save(stage='READING_DOCUMENTS')
             blocks,manifest=content(s3,bucket,refs)
             c.write_json(s3,bucket,prefix+'/manifest.json',manifest)
-            blocks.append({'type':'text','text':c.dumps({k:v for k,v in payload.items() if k not in ('directSources','documentation')})})
+            blocks.append({'type':'text','text':{k:v for k,v in payload.items() if k not in ('directSources','documentation')}})
             body={'model':model,'max_tokens':12000,'system':RULES,'messages':[{'role':'user','content':blocks}]}
             # Validate size before marking a paid attempt. Never retry an ambiguous call.
             if len(json.dumps(body).encode())>30_000_000: raise DirectError('CONTEXT_TOO_LARGE','Wybierz mniej dokumentów w tej wiadomości.')
