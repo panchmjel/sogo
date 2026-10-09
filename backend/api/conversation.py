@@ -7,7 +7,7 @@ from decimal import Decimal
 from botocore.exceptions import ClientError
 from boto3.dynamodb.types import TypeSerializer
 
-ACTIONS={'open_purchase_thread','get_purchase_thread','send_purchase_turn','apply_purchase_proposal'}
+ACTIONS={'open_purchase_thread','get_purchase_thread','send_purchase_turn','apply_purchase_proposal','export_thread_comparison'}
 KIND='PURCHASE_CONVERSATION'
 def now(): return datetime.now(timezone.utc).isoformat()
 def dumps(v): return json.dumps(v,ensure_ascii=False,default=lambda x:int(x) if isinstance(x,Decimal) and x==int(x) else str(x))
@@ -79,6 +79,15 @@ def handle(api,subject,pid,body):
         selected=[r for r in refs if int(r['sequence'])>after][:30]
         turns=[expose(api,get(api.TABLE,pid,'AI#'+r['jobId'])) for r in selected]
         return {'threadId':tid,'version':int(thread['version']),'turns':turns,'nextAfterSequence':int(selected[-1]['sequence']) if len([r for r in refs if int(r['sequence'])>after])>30 else None}
+    if action=='export_thread_comparison':
+        import base64
+        from direct_comparison import workbook
+        saved=get(api.TABLE,pid,'AI#'+api.identifier(body.get('jobId')))
+        if not saved or saved.get('threadId')!=tid or saved.get('status')!='DONE' or not saved.get('resultKey'):
+            raise api.Problem(404,'Nie znaleziono zapisanego porównania.')
+        result=read_json(api.S3,api.BUCKET,saved['resultKey'])
+        if not result.get('comparison'):raise api.Problem(404,'Ta odpowiedź nie zawiera zapisanego porównania.')
+        return {'fileName':'APO-'+saved['jobId']+'.xlsx','base64':base64.b64encode(workbook(result['comparison'])).decode(),'contentType':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}
     if action=='apply_purchase_proposal': return apply(api,subject,pid,tid,body)
     rid=api.identifier(body.get('requestId')); jid=ident(subject,pid,tid,rid)
     message=body.get('message')

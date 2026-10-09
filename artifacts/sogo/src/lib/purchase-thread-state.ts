@@ -24,3 +24,4 @@ export function isPurchaseThreadTurnActive(status: string | undefined) {
 export function purchaseThreadPollCursor(sequence: number) {
   return Math.max(0, sequence - 1);
 }
+

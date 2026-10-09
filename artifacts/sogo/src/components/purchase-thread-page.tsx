@@ -29,6 +29,8 @@ import {
   type PurchaseThreadSource,
   type PurchaseThreadTurn,
   compareOffers,
+  exportThreadComparison,
+  type DirectComparison,
   getAIJob,
   type AIJob,
 } from '@/lib/api';
@@ -536,6 +538,7 @@ function ResultBody({
     return (
       <div className="mt-4 rounded-xl border border-border/70 bg-card p-4">
         <SafeMarkdown text={result.text} />
+        {result.comparison && <DirectComparisonCard comparison={result.comparison} api={api} />}
         {result.changes.length > 0 && (
           <details className="mt-3 rounded-lg border border-border/70 bg-background/60">
             <summary className="cursor-pointer px-3 py-2 text-xs font-semibold">Dane zmian odpowiedzi <span className="text-muted-foreground">({result.changes.length})</span></summary>
@@ -638,6 +641,31 @@ function SavedScopePanel({ api }: { api: ThreadApi }) {
 }
 
 type WorkspaceTab = 'materials' | 'comparisons' | 'files';
+
+function DirectComparisonCard({ comparison, api }: { comparison: DirectComparison; api: ThreadApi }) {
+  const download = useMutation({
+    mutationFn: async () => {
+      if (!api.thread) throw new Error('Brak rozmowy');
+      const file = await exportThreadComparison(api.projectId, api.thread.threadId, comparison.id, api.purchaseAreaId);
+      const bytes = Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], {type: file.contentType}));
+      const a = document.createElement('a'); a.href = url; a.download = file.fileName; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
+  return <section className="my-3 rounded-xl border border-border bg-card p-4">
+    <h3 className="font-bold">{comparison.offers.map(o => o.supplier).join(' ↔ ')}</h3>
+    <p className="my-2 text-xs text-muted-foreground">Lista v{comparison.scopeVersion}. Wyceniono wspólnie {comparison.pricedCount} z {comparison.requiredCount} pozycji. Brak wartości nie oznacza zera. Transport i opłaty nie są doliczone.</p>
+    <button onClick={() => download.mutate()} disabled={download.isPending} className="rounded-lg bg-primary px-4 py-2 font-bold text-primary-foreground">{download.isPending ? 'Pobieram…' : 'Pobierz APO (.xlsx)'}</button>
+    {download.isError && <p role="alert">Nie udało się pobrać pliku. Spróbuj ponownie.</p>}
+    <details className="mt-3"><summary>Szczegóły porównania</summary><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th>Materiał</th><th>Ilość</th>{comparison.offers.map(o => <th key={o.documentId}>{o.supplier} netto</th>)}</tr></thead><tbody>{comparison.rows.map(r => <tr key={r.itemId}><td className="p-2">{r.name}</td><td>{r.quantity ?? 'Do ustalenia'} {r.unit}</td>{r.quotes.map((q,i) => <td key={i} className="p-2">{q.net ?? 'Do ustalenia'}<details><summary>Źródło i cena</summary>{q.unitNet ?? 'Brak ceny'} / {r.unit}<p>{q.note}</p><p>Strona {q.page ?? '—'}: {q.quote}</p></details></td>)}</tr>)}</tbody></table></div></details>
+  </section>;
+}
+
+function ConversationComparisons({ api }: { api: ThreadApi }) {
+  const comparisons = api.turns.flatMap(t => t.result?.type === 'ANSWER' && t.result.comparison ? [t.result.comparison] : []);
+  return <div className="p-4"><p className="text-sm">Napisz w rozmowie „Porównaj oferty”. Asystent zapisze wynik tutaj i przygotuje APO. Nieznane ilości pozostaną do ustalenia.</p>{comparisons.length ? comparisons.slice().reverse().map(c => <DirectComparisonCard key={c.id} comparison={c} api={api} />) : <p className="mt-4 text-muted-foreground">Brak zapisanych porównań z rozmowy.</p>}</div>;
+}
 
 function OfferComparisonAction({ api, selectedIds, setSelectedIds }: { api: ThreadApi; selectedIds: string[]; setSelectedIds: React.Dispatch<React.SetStateAction<string[]>> }) {
   const queryClient = useQueryClient();
@@ -934,12 +962,12 @@ function WorkspaceDataPanel({
         {tab === 'materials' ? (
           <div className="h-full min-h-0 w-full min-w-0 space-y-4 overflow-y-auto p-3 sm:p-4">
             <SavedScopePanel api={api} />
-            {selectedProposal ? <ProposalPreview proposal={selectedProposal} api={api} onUpdatedProposal={onUpdatedProposal} /> : (
+            {selectedProposal ? ((selectedProposal.proposalStatus === 'APPLIED' || selectedProposal.appliedVersion != null || api.appliedProposals[selectedProposal.proposalId] != null) ? <details><summary className="cursor-pointer text-xs">Historia zastosowanej propozycji</summary><ProposalPreview proposal={selectedProposal} api={api} onUpdatedProposal={onUpdatedProposal} /></details> : <ProposalPreview proposal={selectedProposal} api={api} onUpdatedProposal={onUpdatedProposal} />) : (
               <div className="rounded-xl border border-dashed border-border bg-background/55 p-4 text-xs text-muted-foreground">Propozycje zmian pojawią się tutaj po odpowiedzi asystenta.</div>
             )}
           </div>
         ) : tab === 'comparisons' ? (
-          <div className="h-full min-h-0 w-full min-w-0 overflow-y-auto"><OfferComparisonAction api={api} selectedIds={selectedOfferIds} setSelectedIds={setSelectedOfferIds} /></div>
+          <div className="h-full min-h-0 w-full min-w-0 overflow-y-auto"><ConversationComparisons api={api} /><details className="p-4"><summary>Wcześniejsze porównania</summary><OfferComparisonAction api={api} selectedIds={selectedOfferIds} setSelectedIds={setSelectedOfferIds} /></details></div>
         ) : (
           <FilesPanel
             api={api}
@@ -1344,3 +1372,4 @@ export function PurchaseThreadPage({ projectId }: Props) {
     </main>
   );
 }
+

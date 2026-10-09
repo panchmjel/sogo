@@ -363,9 +363,9 @@ export function usePurchaseThread(projectId: string) {
         const currentIds = current.attachments
           .filter((attachment) => attachment.status === 'UPLOADED' && attachment.documentId)
           .map((attachment) => attachment.documentId!);
-        const sentIds = response.turn.attachmentIds ?? input.attachmentIds;
-        const sentMessage = response.turn.message ?? input.message;
-        const sameDraft = current.message === sentMessage && sameIds(currentIds, sentIds);
+        const sentIds = input.attachmentIds;
+        const sentMessage = input.message;
+        const sameDraft = current.message.trim() === sentMessage.trim() && sameIds(currentIds, sentIds);
         return {
           ...current,
           message: sameDraft ? '' : current.message,
@@ -691,3 +691,4 @@ export function usePurchaseThread(projectId: string) {
     promptForUpdatedProposal,
   };
 }
+

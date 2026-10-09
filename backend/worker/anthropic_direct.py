@@ -88,6 +88,9 @@ RULES='''Jesteś asystentem zakupów budowlanych. Odpowiadaj po polsku na bież�
 RULES += '''
 Niepewność nie jest awarią. Zachowaj pozycje bez ustalonej ilości (quantity=null) i wyjaśnij w text, czego brakuje. Nigdy nie wymyślaj źródła. Jeśli użytkownik podejmuje decyzję o danych wcześniejszego szkicu, uwzględnij draftPlan i jego odpowiedź; oznacz taką decyzję źródłem USER oraz przytocz ją w reason. Nie traktuj samego szkicu AI jako dowodu. Jeśli użytkownik pozostawia ilość do ustalenia, użyj null. Jeżeli polecenie jest niejednoznaczne, zadaj pytanie zamiast zgadywać.'''
 
+from direct_comparison import INSTRUCTIONS
+RULES += INSTRUCTIONS
+
 def run_conversation(job,table,s3,bucket,context,save):
     import conversation as c
     prefix=f"processed/project-ai/{job['projectId']}/{job['jobId']}/direct"
@@ -115,7 +118,12 @@ def run_conversation(job,table,s3,bucket,context,save):
         if response.get('stop_reason')!='end_turn': raise DirectError('INCOMPLETE_RESPONSE','AI nie zakończyło odpowiedzi. Nie zastosowano częściowych zmian.')
         plan=c.parse_plan(''.join(x.get('text','') for x in response.get('content',[]) if x.get('type')=='text'))
         from review_dialogue import prepare
-        result,after=prepare(plan,payload,job['jobId'],manifest,c)
+        if plan.get('type')=='COMPARISON':
+            from direct_comparison import build
+            try: result=build(plan,payload,job['jobId'],manifest)
+            except ValueError as exc: result={'type':'ANSWER','text':str(exc)+'. Doprecyzuj wybór w rozmowie.','changes':[],'findings':[]}
+            after=None
+        else: result,after=prepare(plan,payload,job['jobId'],manifest,c)
         if result['type']=='SCOPE_PROPOSAL':
             proposal={'PK':'PROJECT#'+job['projectId'],'SK':'PROPOSAL#'+job['jobId'],'proposalId':job['jobId'],'threadId':job['threadId'],'expectedScopeVersion':job['expectedScopeVersion'],'status':'PROPOSED','createdAt':c.now(),'afterKey':prefix+'/after.json'}
             c.write_json(s3,bucket,proposal['afterKey'],after)

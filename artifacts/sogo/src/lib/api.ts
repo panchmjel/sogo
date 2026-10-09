@@ -1078,7 +1078,14 @@ export type PurchaseThreadScopeChange = {
   sources: PurchaseThreadSource[];
 };
 
+export type DirectComparison = {
+  id: string; scopeVersion: number; pricedCount: number; requiredCount: number; commonTotals: (string | null)[];
+  offers: { documentId: string; supplier: string; filename: string }[];
+  rows: { itemId: string; name: string; quantity: string | null; unit: string | null; quotes: { unitNet: string | null; net: string | null; page: number | null; quote: string; note: string }[] }[];
+};
+
 export type PurchaseThreadAnswer = {
+  comparison?: DirectComparison;
   type: 'ANSWER';
   text: string;
   changes: unknown[];
@@ -1903,4 +1910,8 @@ export function importComparisonScopeOffer(
     expectedVersion,
     requestId,
   }, purchaseAreaId));
+}
+
+export function exportThreadComparison(projectId: string, threadId: string, jobId: string, purchaseAreaId?: string | null) {
+  return apiRequest<{fileName: string; base64: string; contentType: string}>('export_thread_comparison', withPurchaseArea({projectId, threadId, jobId}, purchaseAreaId));
 }
