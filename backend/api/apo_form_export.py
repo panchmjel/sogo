@@ -96,12 +96,26 @@ class Sheet:
 def workbook(comparison, project_name='', created_at=''):
     offers = comparison.get('offers') or []
     items = comparison.get('rows') or []
-    if len(offers)!=2 or not items:
-        raise ValueError('APO wymaga zapisanego porównania dwóch ofert i materiałów.')
+    if not 2 <= len(offers) <= 5 or not items:
+        raise ValueError('APO wymaga zapisanego porównania od 2 do 5 ofert i materiałów.')
+    slots=[('K','L','M'),('N','O','P'),('Q','R','S'),('T','U','V'),('W','X','Y')][:len(offers)]
+    helpers=['AF','AG','AH','AI','AJ'][:len(offers)]
+    end_col=slots[-1][2]
     n=len(items);last_item=13+n;total=last_item+1;shift=n-9
     with zipfile.ZipFile(io.BytesIO(base64.b64decode(TEMPLATE_B64))) as src:
         files={name:src.read(name) for name in src.namelist()}
     apo=Sheet(files['xl/worksheets/sheet1.xml']);kwd=Sheet(files['xl/worksheets/sheet2.xml'])
+    # Match all supplier blocks to the styled second block (wrapping and number formats).
+    for row in apo.data:
+        index=int(row.get('r'))
+        if index<9 or index>32:continue
+        for desc,price,value in slots[2:]:
+            for source,target in zip(('N','O','P'),(desc,price,value)):
+                cell=row.find(tag('c')+f'[@r="{source}{index}"]')
+                if cell is not None:
+                    existing=row.find(tag('c')+f'[@r="{target}{index}"]')
+                    if existing is not None:row.remove(existing)
+                    clone=copy.deepcopy(cell);clone.set('r',target+str(index));row.append(clone)
     prototype=copy.deepcopy(apo.row(15))
     for row in list(apo.data):
         old=int(row.get('r'))
@@ -117,9 +131,12 @@ def workbook(comparison, project_name='', created_at=''):
     # Unused template supplier slots remain available but do not consume screen/print space.
     cols=apo.root.find(tag('cols'))
     for col in cols:
-        if int(col.get('min'))>=17:col.set('hidden','1')
-    ET.SubElement(cols,tag('col'),min='33',max='33',hidden='1',width='12')
-    apo.put('AF1','Wspólny koszyk — dostawca 1');apo.put('AG1','Wspólny koszyk — dostawca 2')
+        if int(col.get('min'))>=11:
+            col.set('hidden','0' if int(col.get('min')) <= 10+3*len(offers) else '1')
+            if int(col.get('min')) <= 10+3*len(offers):
+                col.set('width',str([29.28,14.28,17.14][(int(col.get('min'))-11)%3]))
+    ET.SubElement(cols,tag('col'),min='33',max='36',hidden='1',width='12')
+    for side,helper in enumerate(helpers):apo.put(helper+'1',f'Wspólny koszyk — dostawca {side+1}')
     apo.height(1,6)
     apo.put('C3','ARKUSZ PORÓWNAWCZY OFERT / OFFER COMPARISON SHEET')
     apo.put('M3',str(comparison.get('id',''))[:8])
@@ -128,7 +145,7 @@ def workbook(comparison, project_name='', created_at=''):
     apo.put('C6','Projekt / Project: '+clean(project_name))
     apo.put('C7',f'Lista materiałów — wersja {comparison.get("scopeVersion", "")} · kwoty netto w PLN')
     apo.height(6,28);apo.height(7,24)
-    for i,(a,b,description) in enumerate([('K','M','L'),('N','P','O')]):
+    for i,(a,b,description) in enumerate([(d,v,p) for d,p,v in slots]):
         offer=offers[i]
         apo.put(a+'9',offer.get('supplier') or f'Dostawca {i+1}')
         apo.put(a+'10','Oferta: '+str(offer.get('offerNumber') or 'brak numeru')+'\n'+str(offer.get('filename') or ''))
@@ -137,7 +154,7 @@ def workbook(comparison, project_name='', created_at=''):
         apo.put(b+'11','Wartość netto\nPLN')
     apo.put('D11','Materiał / Specification');apo.put('E11','Jednostka / Unit')
     apo.put('E12','j.m.');apo.put('F12','ilość')
-    totals=[Decimal(0),Decimal(0)];counts=[0,0];common=[Decimal(0),Decimal(0)];common_count=0
+    totals=[Decimal(0)]*len(offers);counts=[0]*len(offers);common=[Decimal(0)]*len(offers);common_count=0
     for index,item in enumerate(items,14):
         row=copy.deepcopy(prototype);row.set('r',str(index));apo.data.append(row)
         for cell in row:
@@ -151,7 +168,7 @@ def workbook(comparison, project_name='', created_at=''):
             apo.put(value+str(index),None,f'IF(COUNT(F{index},{price}{index})=2,ROUND(F{index}*{price}{index},2),"")')
         prices={q.get('documentId'):q for q in item.get('quotes',[])}
         nets=[];lengths=[len(str(item.get('name') or ''))/40]
-        for side,(desc,price,value) in enumerate([('K','L','M'),('N','O','P')]):
+        for side,(desc,price,value) in enumerate(slots):
             quote=prices.get(offers[side].get('documentId'),{})
             amount=decimal(quote.get('unitNet'))
             net=(qty*amount).quantize(Decimal('.01'),rounding=ROUND_HALF_UP) if qty is not None and amount is not None else None
@@ -168,19 +185,18 @@ def workbook(comparison, project_name='', created_at=''):
         both=all(net is not None for net in nets)
         if both:
             common_count+=1
-            for side in range(2):common[side]+=nets[side]
-        for side,(helper,value) in enumerate([('AF','M'),('AG','P')]):
-            apo.put(helper+str(index),nets[side] if both else None,f'IF(COUNT(M{index},P{index})=2,{value}{index},"")')
+            for side in range(len(offers)):common[side]+=nets[side]
+        for side,(helper,value) in enumerate(zip(helpers,[v for _,_,v in slots])):
+            apo.put(helper+str(index),nets[side] if both else None,f'IF(COUNT({chr(44).join(v+str(index) for _,_,v in slots)})={len(offers)},{value}{index},"")')
         apo.height(index,min(360,max(48,16*(int(max(lengths))+2))))
     footer=lambda old:old+shift
     for value in ('H','J'):
         apo.put(value+str(total),None,f'IF(COUNT({value}14:{value}{last_item})>0,ROUND(SUM({value}14:{value}{last_item}),2),"")')
-    apo.put('K'+str(total),'Suma wycenionych pozycji')
-    apo.put('N'+str(total),'Suma wycenionych pozycji')
+    for desc,_,_ in slots:apo.put(desc+str(total),'Suma wycenionych pozycji')
     apo.put('J'+str(footer(24)),'Pozycje bez pełnej wyceny\n(bez szacowania brakujących cen)')
-    apo.put('J'+str(footer(25)),'Wspólny koszyk\nPozycje wycenione u obu dostawców')
+    apo.put('J'+str(footer(25)),'Wspólny koszyk\nPozycje wycenione u wszystkich dostawców')
     apo.put('J'+str(footer(28)),'Wspólny koszyk po potrąceniach\n(po uzupełnieniu stawek)')
-    for side,(price,value,helper) in enumerate([('L','M','AF'),('O','P','AG')]):
+    for side,(price,value,helper) in enumerate([(p,v,h) for (_,p,v),h in zip(slots,helpers)]):
         apo.put(value+str(total),totals[side] if counts[side] else None,f'IF(COUNT({value}14:{value}{last_item})>0,ROUND(SUM({value}14:{value}{last_item}),2),"")')
         apo.put(value+str(footer(24)),n-counts[side],f'{n}-COUNT({value}14:{value}{last_item})')
         apo.put(value+str(footer(25)),common[side] if common_count else None,f'IF(COUNT({helper}14:{helper}{last_item})>0,ROUND(SUM({helper}14:{helper}{last_item}),2),"")')
@@ -190,7 +206,7 @@ def workbook(comparison, project_name='', created_at=''):
         apo.put(value+str(footer(28)),None,f'IF(COUNT({value}{footer(25)}:{value}{footer(27)})=3,{value}{footer(25)}-{value}{footer(26)}-{value}{footer(27)},"")')
         apo.put(value+str(footer(30)))
         apo.put(value+str(footer(31)),None,f'IF(AND(ISNUMBER({value}{footer(30)}),{value}{footer(30)}>0,COUNT({value}14:{value}{last_item})={n}),({value}{footer(30)}-{value}{total})/{value}{footer(30)},"")')
-        apo.put(('K' if side==0 else 'N')+str(footer(32)),f'Wyceniono {counts[side]} z {n} pozycji. Wspólny koszyk: {common_count} z {n}.\nTransport i pozostałe opłaty nie są doliczone. Puste pole nie oznacza zera. Dopasowania wymagają sprawdzenia.')
+        apo.put(slots[side][0]+str(footer(32)),f'Wyceniono {counts[side]} z {n} pozycji. Wspólny koszyk: {common_count} z {n}.\nTransport i pozostałe opłaty nie są doliczone. Puste pole nie oznacza zera. Dopasowania wymagają sprawdzenia.')
     for old,h in [(23,32),(24,40),(25,48),(26,40),(27,45),(28,50),(30,32),(31,28),(32,100)]:apo.height(footer(old),h)
     # Keep the second official form, but never turn a comparison into a supplier decision.
     kwd.put('I3',str(comparison.get('id',''))[:8]);kwd.put('I4',str(created_at)[:10])
@@ -199,21 +215,40 @@ def workbook(comparison, project_name='', created_at=''):
     kwd.put('D9');kwd.put('E8')
     kwd.put('I10',offers[0].get('supplier'));kwd.put('J10','Oferta: '+str(offers[0].get('offerNumber') or ''))
     kwd.put('K10',(offers[1].get('supplier') or '')+'\nOferta: '+str(offers[1].get('offerNumber') or ''))
-    kwd.put('L10','Dostawca III (opcjonalnie)')
+    kwd.put('L10',(offers[2].get('supplier') or '')+'\nOferta: '+str(offers[2].get('offerNumber') or '') if len(offers)>2 else 'Dostawca III (opcjonalnie)')
+    kwd_end='L'
+    for side,target in [(3,'M'),(4,'N')]:
+        if side>=len(offers):continue
+        kwd_end=target
+        for row in list(kwd.data):
+            index=int(row.get('r'))
+            if not 10<=index<=40:continue
+            cell=row.find(tag('c')+f'[@r="L{index}"]')
+            if cell is not None:
+                clone=copy.deepcopy(cell);clone.set('r',target+str(index))
+                for f in clone.findall(tag('f')):f.text=re.sub(r'\bL(?=\d)',target,f.text or '')
+                row.append(clone)
+        kwd.put(target+'10',(offers[side].get('supplier') or '')+'\nOferta: '+str(offers[side].get('offerNumber') or ''))
+        ET.SubElement(kwd.root.find(tag('mergeCells')),tag('mergeCell'),ref=f'{target}19:{target}20')
+    if len(offers)>3:
+        kcols=kwd.root.find(tag('cols'))
+        for col in list(kcols):
+            if int(col.get('min'))==13:kcols.remove(col)
+        ET.SubElement(kcols,tag('col'),min='13',max=str(9+len(offers)),width='30.71',customWidth='1')
     kwd.put('E41');kwd.put('E42')
     # Blank inputs stay blank; formulas only become active after a user enters amounts.
-    for column in ('F','H','I','K','L'):
+    for column in ['F','H','I','K','L']+(['M'] if len(offers)>3 else [])+(['N'] if len(offers)>4 else []):
         for row,inputs in [(16,[11,13,14]),(17,[12,15]),(18,[11,12,13,14,15]),(20,[18,19])]:
             if column in ('F','H') and row not in (18,20):continue
             refs=','.join(f'{column}{r}' for r in inputs)
             kwd.put(f'{column}{row}',None,f'IF(COUNT({refs})>0,SUM({refs}),"")')
-    files['xl/worksheets/sheet1.xml']=apo.finish(35+shift,'P',13)
-    files['xl/worksheets/sheet2.xml']=kwd.finish(43,'L',10)
+    files['xl/worksheets/sheet1.xml']=apo.finish(35+shift,end_col,13)
+    files['xl/worksheets/sheet2.xml']=kwd.finish(43,kwd_end,10)
     book=ET.fromstring(files['xl/workbook.xml'])
     for node in list(book):
         if node.tag in (tag('definedNames'),tag('externalReferences'),tag('calcPr')):book.remove(node)
     names=ET.SubElement(book,tag('definedNames'))
-    for i,(sheet,area,titles) in enumerate([('2_APO',f'$C$2:$P${35+shift}','$9:$13'),('3_KWD','$B$2:$L$42','$10:$10')]):
+    for i,(sheet,area,titles) in enumerate([('2_APO',f'$C$2:${end_col}${35+shift}','$9:$13'),('3_KWD',f'$B$2:${kwd_end}$42','$10:$10')]):
         ET.SubElement(names,tag('definedName'),name='_xlnm.Print_Area',localSheetId=str(i)).text=f"'{sheet}'!{area}"
         ET.SubElement(names,tag('definedName'),name='_xlnm.Print_Titles',localSheetId=str(i)).text=f"'{sheet}'!{titles}"
     ET.SubElement(book,tag('calcPr'),calcId='191029',fullCalcOnLoad='1',forceFullCalc='1')

@@ -3,7 +3,7 @@ import copy,io,zipfile,xml.etree.ElementTree as E
 from decimal import Decimal,InvalidOperation,ROUND_HALF_UP
 
 INSTRUCTIONS='''
-Możesz dodatkowo zwrócić type="COMPARISON" wyłącznie gdy bieżący użytkownik zleca utworzenie porównania ofert. To zapisze wynik i udostępni APO. Użyj aktualnej scope.items; nie zmieniaj listy. Zwróć comparison={"offers":[{"documentId":"ID","supplier":"nazwa","offerNumber":"numer"}],"rows":[{"itemId":"ID ze scope","quotes":[{"documentId":"ID oferty","unitNet":"cena jednostkowa w PLN lub null","unit":"jednostka ceny","page":1,"quote":"dosłowny fragment źródła","note":"zgodność, brak albo przeliczenie"}]}]}. Dokładnie dwie oferty i wszystkie pozycje scope. Jeśli nie możesz wybrać dwóch ofert, zwróć ANSWER z pytaniem. Nie kopiuj ilości ofertowych jako projektowych. Brak ilości nie blokuje porównania. Cenę podaj tylko dla zgodnej jednostki i produktu; w razie wątpliwości null oraz wyjaśnienie. Nie wymyślaj źródeł, nie wpisuj zera za brak. Obliczenia wykona aplikacja. text ma być krótkim podsumowaniem, bez powtarzania tabeli. changes=[].'''
+Możesz dodatkowo zwrócić type="COMPARISON" wyłącznie gdy bieżący użytkownik zleca utworzenie porównania ofert. To zapisze wynik i udostępni APO. Użyj aktualnej scope.items; nie zmieniaj listy. Zwróć comparison={"offers":[{"documentId":"ID","supplier":"nazwa","offerNumber":"numer"}],"rows":[{"itemId":"ID ze scope","quotes":[{"documentId":"ID oferty","unitNet":"cena jednostkowa w PLN lub null","unit":"jednostka ceny","page":1,"quote":"dosłowny fragment źródła","note":"zgodność, brak albo przeliczenie"}]}]}. Od dwóch do pięciu różnych ofert i wszystkie pozycje scope. Uwzględnij wszystkie oferty wskazane przez użytkownika, nigdy nie pomijaj wybranej oferty. Jeśli użytkownik wskazał ponad pięć ofert lub nie wiadomo, które wybrać, zwróć ANSWER z pytaniem o wybór maksymalnie pięciu. Jeśli dostępna jest tylko jedna oferta, poproś o kolejną. Nie kopiuj ilości ofertowych jako projektowych. Brak ilości nie blokuje porównania. Cenę podaj tylko dla zgodnej jednostki i produktu; w razie wątpliwości null oraz wyjaśnienie. Nie wymyślaj źródeł, nie wpisuj zera za brak. Obliczenia wykona aplikacja. text ma być krótkim podsumowaniem, bez powtarzania tabeli. changes=[].'''
 
 def number(v):
     if v is None or isinstance(v,bool):return None
@@ -18,8 +18,8 @@ def unit(v):
 def build(plan,payload,jid,manifest):
     raw=plan.get('comparison') or {}; docs={x['documentId']:x for x in manifest}
     offers=raw.get('offers',[])
-    if len(offers)!=2 or len({o.get('documentId') for o in offers})!=2 or any(o.get('documentId') not in docs for o in offers):
-        raise ValueError('Porównanie wymaga dwóch dokumentów ofertowych')
+    if not isinstance(offers, list) or not 2 <= len(offers) <= 5 or any(not isinstance(o, dict) for o in offers) or len({o.get('documentId') for o in offers})!=len(offers) or any(o.get('documentId') not in docs for o in offers):
+        raise ValueError('Porównanie wymaga od 2 do 5 różnych dokumentów ofertowych')
     offers=[{k:o.get(k) for k in ('documentId','supplier','offerNumber')}|{'filename':docs[o['documentId']]['filename']} for o in offers]
     scope=payload.get('scope',{});items=scope.get('items',[])
     if not items:raise ValueError('Najpierw przygotuj listę materiałów')
@@ -34,10 +34,10 @@ def build(plan,payload,jid,manifest):
             valid=evidence and u is not None and unit(c.get('unit'))==u
             p=p if valid else None
             net=(q*p).quantize(Decimal('.01'),rounding=ROUND_HALF_UP) if q is not None and p is not None else None
-            prices.append({'documentId':offer['documentId'],'unitNet':str(p) if p is not None else None,'net':str(net) if net is not None else None,'page':page if evidence else None,'quote':quote if evidence else '', 'note':str(c.get('note') or 'Brak potwierdzonej ceny w zgodnej jednostce.')[:2000]})
+            prices.append({'documentId':offer['documentId'],'unitNet':str(p) if p is not None else None,'net':str(net) if net is not None else None,'page':page if evidence else None,'quote':quote if evidence else '', 'note':str(c.get('note') or ('Cena potwierdzona w źródle.' if p is not None else 'Brak potwierdzonej ceny w zgodnej jednostce.'))[:2000]})
         rows.append({'itemId':item['itemId'],'name':item['name'],'quantity':str(q) if q is not None else None,'unit':item.get('unit'),'quotes':prices})
     common=[r for r in rows if all(x['net'] is not None for x in r['quotes'])]
-    totals=[str(sum((Decimal(r['quotes'][i]['net']) for r in common),Decimal(0))) if common else None for i in range(2)]
+    totals=[str(sum((Decimal(r['quotes'][i]['net']) for r in common),Decimal(0))) if common else None for i in range(len(offers))]
     comparison={'id':jid,'scopeVersion':scope.get('version',0),'offers':offers,'rows':rows,'commonTotals':totals,'pricedCount':len(common),'requiredCount':len(rows),'requiresReview':True}
     return {'type':'ANSWER','text':str(plan.get('text') or 'Porównanie zapisane. Pozycje bez ilości lub ceny pozostają do ustalenia.'),'changes':[],'findings':[],'comparison':comparison,'expectedScopeVersion':scope.get('version',0)}
 
